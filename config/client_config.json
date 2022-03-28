@@ -1,3 +1,6 @@
 {
-  "ClientID": "client1"
+  "ClientID": "client1",
+  "CoordAddr": "0.0.0.0:1234",
+  "LocalCoordAddr": "0.0.0.0:1234",
+  "LocalPrimaryServerAddr": "0.0.0.0:1234"
 }

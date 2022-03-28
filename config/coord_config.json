@@ -1,2 +1,6 @@
 {
+    "ClientListenAddr": "0.0.0.0:1234",
+    "ServerListenAddr": "0.0.0.0:1234",
+    "LostMsgsThresh": 3,
+    "NumServers": 1
 }

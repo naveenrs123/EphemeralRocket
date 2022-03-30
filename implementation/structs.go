@@ -62,14 +62,25 @@ type RetrieveMessageReq struct {
 	OtherClientId string // leave as "" to retrieve all unread messages.
 }
 
+type PrimaryServerReq struct {
+	ClientId string
+}
+
+type PrimaryServerRes struct {
+	ClientId string
+	PrimaryServerIPPort string
+	ChainReady bool
+}
+
+
 // Server <-> Server
 
 // Common
 type MessageStruct struct {
-	sourceId      string
-	destinationId string
-	data          string    // must be less than 300 characters
-	timestamp     time.Time // leave blank as client
+	SourceId      string
+	DestinationId string
+	Data          string    // must be less than 300 characters
+	Timestamp     time.Time // leave blank as client
 }
 
 // Other Types/Enums

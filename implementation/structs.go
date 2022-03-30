@@ -7,8 +7,10 @@ import "time"
 // Server <-> Coord
 type ServerRequestToJoinReq struct {
 	ServerId          uint8
-	ServerConnectAddr string
-	FCheckAddr        string
+	ServerConnectAddr string // Address that coord can use to make RPC calls to server.
+	ServerServerAddr  string // Address that server uses to listen to other servers.
+	ServerClientAddr  string // Address that server uses to listen to clients.
+	FCheckAddr        string // New address that server uses to listen to heartbeats using Fcheck.
 }
 
 type ConnectRingReq struct {
@@ -40,6 +42,18 @@ type HandleFailureReq struct {
 // Use this for all RPC calls between Client and Coord
 type ClientCoordReq struct {
 	ClientId string
+}
+
+type ClientJoinRes struct {
+	IsReady bool
+}
+
+type GetPrimaryServerRes struct {
+	PrimaryServerAddr string
+}
+
+type RetrieveClientsRes struct {
+	ClientIds []string
 }
 
 // Client <-> Server

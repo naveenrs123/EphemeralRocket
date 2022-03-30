@@ -150,7 +150,49 @@ func (c *CoordRPC) RetrieveClients(req *interface{}, res *RetrieveClientsRes) er
 // CreateServerRing
 // Called once all servers have joined the system. Coord will have to make an RPC call on the server.
 func CreateServerRing(c *CoordRPC) {
+	length := len(c.ServerDetailsMap)
+	serverNextOrder := make([]uint8, length)
+	serverPrevOrder := make([]uint8, length)
 
+	counter := 1
+	for k := range c.ServerDetailsMap {
+		// use modulo to assign each server to the right position in the prev and next order.
+		serverPrevOrder[counter] = k
+		serverNextOrder[(length-1)-counter] = k
+		counter = (counter + 1) % length
+	}
+
+	counter = 0
+	for _, v := range c.ServerDetailsMap {
+		// assign each server its prev and next server.
+		v.PrevId = serverPrevOrder[counter]
+		v.NextId = serverNextOrder[(length-1)-counter]
+		counter++
+	}
+
+	// Make RPC call to each server with its prev and next server info
+	serverCalls := make([]*rpc.Call, length)
+	doneChan := make(chan *rpc.Call, length)
+	counter = 0
+	for _, v := range c.ServerDetailsMap {
+		client, err := rpc.Dial("tcp", v.CoordAddr)
+		util.CheckErr(err, "could not connect to server with ID: %d", v.ServerId) // This error should never happen.
+		req := ConnectRingReq{
+			PrevServerId:   v.PrevId,
+			PrevServerAddr: c.ServerDetailsMap[v.PrevId].ServerAddr,
+			NextServerId:   v.NextId,
+			NextServerAddr: c.ServerDetailsMap[v.NextId].ServerAddr,
+		}
+		var res interface{}
+		serverCalls[counter] = client.Go("ServerRPC.ConnectRing", &req, &res, doneChan)
+	}
+
+	counter = 0
+	for counter < length {
+		// This error should never happen.
+		util.CheckErr(serverCalls[counter].Error, "Error during call to ServerRPC.ConnectRing for server")
+		<-serverCalls[counter].Done
+	}
 }
 
 // AssignPrimaryServer

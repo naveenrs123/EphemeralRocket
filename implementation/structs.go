@@ -59,7 +59,12 @@ type RetrieveClientsRes struct {
 // Client <-> Server
 type RetrieveMessageReq struct {
 	ClientId      string
-	OtherClientId string // leave as "" to retrieve all unread messages.
+	SourceClientId string // leave as "" to retrieve all unread messages.
+}
+
+type RetrieveMessageRes struct {
+	ClientId      string
+	Messages      []MessageStruct
 }
 
 type PrimaryServerReq struct {

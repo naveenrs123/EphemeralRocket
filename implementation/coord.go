@@ -83,6 +83,7 @@ func (c *Coord) Start(config CoordConfig) error {
 // Server must provide an address that the coord can use to contact them, as well as an address to use for fcheck.
 // ! This function is mostly identical to one used in A3.
 func (c *CoordRPC) ServerRequestToJoin(req *ServerRequestToJoinReq, res *interface{}) error {
+	println("server requested to join: %d", req.ServerId)
 	// Cache server details
 	c.ServerDetailsMap[req.ServerId] = &ServerDetails{
 		ServerId:         req.ServerId,
@@ -97,7 +98,7 @@ func (c *CoordRPC) ServerRequestToJoin(req *ServerRequestToJoinReq, res *interfa
 	if len(c.ServerDetailsMap) == int(c.NumServers) {
 		go CreateServerRing(c)
 	}
-
+	println("server successfully joined: %d", req.ServerId)
 	return nil
 }
 
@@ -193,6 +194,7 @@ func CreateServerRing(c *CoordRPC) {
 		util.CheckErr(serverCalls[counter].Error, "Error during call to ServerRPC.ConnectRing for server")
 		<-serverCalls[counter].Done
 	}
+	println("Successfully joined all servers.")
 }
 
 // AssignPrimaryServer

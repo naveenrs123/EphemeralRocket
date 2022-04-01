@@ -1,7 +1,13 @@
 package main
 
-import "fmt"
+import (
+	"ephemeralrocket/implementation"
+	"ephemeralrocket/util"
+)
 
 func main() {
-	fmt.Println("This is the coord!")
+	var config implementation.CoordConfig
+	util.ReadJSONConfig("config/coord_config.json", &config)
+	coord := implementation.NewCoord()
+	coord.Start(config)
 }

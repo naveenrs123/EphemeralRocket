@@ -73,3 +73,13 @@ func ExtractPort(addr string) string {
 	}
 	return splitAddr[1]
 }
+
+// removes a string from an array
+func RemoveElement(arr []string, elem string) []string {
+	for i, v := range arr {
+		if v == elem {
+			return append(arr[:i], arr[i+1:]...)
+		}
+	}
+	return arr
+}

@@ -1,7 +1,0 @@
-{
-  "ServerID": 1,
-  "CoordAddr": "0.0.0.0:1234",
-  "LocalCoordAddr": "0.0.0.0:1234",
-  "ServerListenAddr": "0.0.0.0:1234",
-  "ClientListenAddr": "0.0.0.0:1234"
-}

@@ -20,9 +20,17 @@ type ConnectRingReq struct {
 	NextServerAddr string
 }
 
+type ConnectRingRes struct {
+	serverId uint8 // not really sure what this should be, feel free to change
+}
+
 type AssignRoleReq struct {
 	ClientId string
 	Role     ServerRole
+}
+
+type AssignRoleRes struct {
+	serverId uint8 // not really sure what this should be, feel free to change
 }
 
 type HandleFailureReq struct {
@@ -58,13 +66,13 @@ type RetrieveClientsRes struct {
 
 // Client <-> Server
 type RetrieveMessageReq struct {
-	ClientId      string
+	ClientId       string
 	SourceClientId string // leave as "" to retrieve all unread messages.
 }
 
 type RetrieveMessageRes struct {
-	ClientId      string
-	Messages      []MessageStruct
+	ClientId string
+	Messages []MessageStruct
 }
 
 type PrimaryServerReq struct {
@@ -72,11 +80,10 @@ type PrimaryServerReq struct {
 }
 
 type PrimaryServerRes struct {
-	ClientId string
+	ClientId            string
 	PrimaryServerIPPort string
-	ChainReady bool
+	ChainReady          bool
 }
-
 
 // Server <-> Server
 
@@ -89,6 +96,10 @@ type MessageStruct struct {
 }
 
 // Other Types/Enums
+
+// 1: primary server
+// 2: secondary server
+// else: routing server
 type ServerRole uint8
 
 const (

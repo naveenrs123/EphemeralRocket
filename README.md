@@ -9,6 +9,8 @@
 - Servers can join the system
 - Clients can join the system and be assigned a primary and 2 secondaries
 
+**Deliverable Document:** https://docs.google.com/document/d/15uG1hbPTbNWCGt8Kr0GwcpzDVVB9nkiPw5xT94j1xe8/edit?usp=sharing
+
 ## Milestone 2
 **Finish Happy Path + Basic Failure Handling**
 - Clients can successfully send messages to other clients

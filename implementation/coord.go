@@ -47,6 +47,7 @@ func NewCoord() *Coord {
 
 // ! This function is mostly identical to one used in A3.
 func (c *Coord) Start(config CoordConfig) error {
+	fmt.Println("COORD LOG: Started")
 	c.cRPC = CoordRPC{
 		NumServers:       config.NumServers,
 		LostMsgsThresh:   config.LostMsgsThresh,
@@ -84,7 +85,7 @@ func (c *Coord) Start(config CoordConfig) error {
 // Server must provide an address that the coord can use to contact them, as well as an address to use for fcheck.
 // ! This function is mostly identical to one used in A3.
 func (c *CoordRPC) ServerJoin(req *ServerRequestToJoinReq, res *interface{}) error {
-	fmt.Printf("server requested to join: %d\n", req.ServerId)
+	fmt.Printf("COORD LOG: Server %d requested to join\n", req.ServerId)
 	// Cache server details
 	c.ServerDetailsMap[req.ServerId] = &ServerDetails{
 		ServerId:         req.ServerId,
@@ -96,10 +97,10 @@ func (c *CoordRPC) ServerJoin(req *ServerRequestToJoinReq, res *interface{}) err
 		SecondaryClients: make([]string, 0),
 	}
 
+	fmt.Printf("COORD LOG: Server %d acknowledged\n", req.ServerId)
 	if len(c.ServerDetailsMap) == int(c.NumServers) {
 		go CreateServerRing(c)
 	}
-	fmt.Printf("server successfully joined: %d\n", req.ServerId)
 	return nil
 }
 
@@ -125,8 +126,6 @@ func (c *CoordRPC) RetrievePrimaryServer(req *PrimaryServerReq, res *PrimaryServ
 	} else {
 		// Otherwise, assign a new primary and provide it to the client.
 		primaryServerId := AssignPrimaryServer(c)
-		fmt.Printf("Primary Id: %d\n", primaryServerId)
-		fmt.Printf("ServerMap: %v\n", c.ServerDetailsMap)
 		c.PrimaryClientMap[req.ClientId] = primaryServerId
 		res.PrimaryServerIPPort = c.ServerDetailsMap[primaryServerId].ClientAddr
 
@@ -156,6 +155,9 @@ func (c *CoordRPC) RetrievePrimaryServer(req *PrimaryServerReq, res *PrimaryServ
 		primaryServer.PrimaryClients = append(primaryServer.PrimaryClients, req.ClientId)
 		prevServer.SecondaryClients = append(prevServer.SecondaryClients, req.ClientId)
 		nextServer.SecondaryClients = append(nextServer.SecondaryClients, req.ClientId)
+		fmt.Printf("COORD LOG: Primary for %s is %d\n", req.ClientId, primaryServer.ServerId)
+		fmt.Printf("COORD LOG: Secondary 1 for %s is %d\n", req.ClientId, prevServer.ServerId)
+		fmt.Printf("COORD LOG: Secondary 2 for %s is %d\n", req.ClientId, nextServer.ServerId)
 	}
 
 	res.ChainReady = true
@@ -172,30 +174,32 @@ func (c *CoordRPC) RetrieveClients(req *interface{}, res *RetrieveClientsRes) er
 // Called once all servers have joined the system. Coord will have to make an RPC call on the server.
 func CreateServerRing(c *CoordRPC) {
 	length := len(c.ServerDetailsMap)
+	serverOrder := make([]uint8, length)
 	serverNextOrder := make([]uint8, length)
 	serverPrevOrder := make([]uint8, length)
 
 	counter := 1
 	for k := range c.ServerDetailsMap {
 		// use modulo to assign each server to the right position in the prev and next order.
-		serverPrevOrder[counter] = k
-		serverNextOrder[(length-1)-counter] = k
-		counter = (counter + 1) % length
+		serverPrevOrder[(counter-1)%length] = k
+		serverOrder[counter%length] = k
+		serverNextOrder[(counter+1)%length] = k
+		counter++
 	}
 
-	counter = 0
-	for _, v := range c.ServerDetailsMap {
+	for i, idx := range serverOrder {
 		// assign each server its prev and next server.
-		v.PrevId = serverPrevOrder[counter]
-		v.NextId = serverNextOrder[(length-1)-counter]
-		counter++
+		v := c.ServerDetailsMap[idx]
+		pos := i % length
+		v.PrevId = serverPrevOrder[pos]
+		v.NextId = serverNextOrder[pos]
 	}
 
 	// Make RPC call to each server with its prev and next server info
 	serverCalls := make([]*rpc.Call, length)
 	doneChan := make(chan *rpc.Call, length)
-	counter = 0
-	for _, v := range c.ServerDetailsMap {
+	for i, idx := range serverOrder {
+		v := c.ServerDetailsMap[idx]
 		client, err := rpc.Dial("tcp", v.CoordAddr)
 		util.CheckErr(err, "could not connect to server with ID: %d", v.ServerId) // This error should never happen.
 		req := ConnectRingReq{
@@ -205,32 +209,28 @@ func CreateServerRing(c *CoordRPC) {
 			NextServerAddr: c.ServerDetailsMap[v.NextId].ServerAddr,
 		}
 		var res ConnectRingRes
-		serverCalls[counter] = client.Go("ServerRPC.ConnectRing", &req, &res, doneChan)
-		counter++
+		serverCalls[i] = client.Go("ServerRPC.ConnectRing", &req, &res, doneChan)
+		fmt.Printf("COORD LOG: Server %d joining\n", v.ServerId)
 	}
 
-	counter = 0
-	for counter < length {
+	for i := range serverOrder {
 		// This error should never happen.
-		util.CheckErr(serverCalls[counter].Error, "Error during call to ServerRPC.ConnectRing for server")
+		util.CheckErr(serverCalls[i].Error, "Error during call to ServerRPC.ConnectRing for server")
 		<-doneChan
-		counter++
 	}
 	c.IsRingReady = true
-	fmt.Printf("Successfully joined all servers.\n")
+	fmt.Println("COORD LOG: All servers joined")
 }
 
 // Called when a client is joining. Assigns a primary server based on a simple algorithm, used to calculate load on the server.
 // The load on a server is given by 2 * number of primary clients + number of secondary clients.
 func AssignPrimaryServer(c *CoordRPC) uint8 {
 	primaryServerId := uint8(0)
-	minLoad := int(100000000)
+	minLoad := int(10000000000000)
 
 	for _, v := range c.ServerDetailsMap {
 		serverLoad := 2*len(v.PrimaryClients) + len(v.SecondaryClients)
-		fmt.Printf("Server Load: %d\n", serverLoad)
 		if serverLoad < minLoad {
-			fmt.Printf("Server id: %d\n", v.ServerId)
 			minLoad = serverLoad
 			primaryServerId = v.ServerId
 		}

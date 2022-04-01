@@ -26,7 +26,7 @@ func NewMessageLib() *MessageLib {
 
 /**
 Starts the message lib, connects to the coord, requests a primary server, and polls for messages. Returns a channel
-where messages can be passed to the client. Returns error if message lib is unable to connect to the coord. 
+where messages can be passed to the client. Returns error if message lib is unable to connect to the coord.
 **/
 func (m *MessageLib) Start(config implementation.ClientConfig) (chan implementation.MessageStruct, error) {
 	laddr, lerr := net.ResolveTCPAddr("tcp", config.LocalCoordAddr)
@@ -58,9 +58,12 @@ since we assume the coord never fails.
 **/
 func (m *MessageLib) ViewClients() []string {
 	for {
+		var req interface{}
 		var res implementation.RetrieveClientsRes
-		err := m.coordClient.Call("CoordRPC.RetrieveClients", &res, &res)
+		err := m.coordClient.Call("CoordRPC.RetrieveClients", &req, &res)
 		if err != nil {
+			fmt.Printf("Error encountered retrieving clients")
+			fmt.Println(err)
 			continue
 		}
 		return res.ClientIds
@@ -68,7 +71,7 @@ func (m *MessageLib) ViewClients() []string {
 }
 
 /**
-Sends a message to a destination client. This call is blocking until the RPC call succeeds. 
+Sends a message to a destination client. This call is blocking until the RPC call succeeds.
 Echos the message sent back, with a timestamp
 **/
 func (m *MessageLib) SendMessage(message implementation.MessageStruct) implementation.MessageStruct {
@@ -89,7 +92,7 @@ func (m *MessageLib) SendMessage(message implementation.MessageStruct) implement
 }
 
 /**
-Retrieve messages from the primary server. If source client id is not nil, it only returns messages from that source client. 
+Retrieve messages from the primary server. If source client id is not nil, it only returns messages from that source client.
 This call is blocking until the RPC call succeeds
 **/
 func (m *MessageLib) RetrieveMessages(sourceClientId string) []implementation.MessageStruct {
@@ -116,7 +119,6 @@ func (m *MessageLib) Stop() {
 	m.serverClient.Close()
 	m.quitChan <- true
 }
-
 
 func (m *MessageLib) PollForMessages() {
 outer:

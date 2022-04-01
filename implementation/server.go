@@ -29,7 +29,7 @@ type ServerRPC struct {
 	primaryClients   []string
 	secondaryClients []string
 	block            chan bool
-	cachedMessages   map[int][]MessageStruct // maps clientId -> list of messages
+	cachedMessages   map[string][]MessageStruct // maps clientId -> list of messages
 }
 
 type Server struct {
@@ -129,24 +129,24 @@ func (sRPC *ServerRPC) ConnectRing(req *ConnectRingReq, res *ConnectRingRes) err
 	sRPC.prevServerAddr = req.PrevServerAddr
 	// not using Ids because there doesn't seem to be a use, add them to sRPC struct if necessary
 
-	res.serverId = sRPC.serverId
+	res.ServerId = sRPC.serverId
 	return nil
 }
 
 // AssignRole
-// Coord calls this, assigning the server a role as either a primary or a secondary.
+// Coord calls this, assigning the server a role as either a primary or secondary.
 func (sRPC *ServerRPC) AssignRole(req *AssignRoleReq, res *AssignRoleRes) error {
-	if req.Role == 1 {
+	if req.Role == ServerRole(1) { // primary server
 		sRPC.primaryClients = append(sRPC.primaryClients, req.ClientId)
 		sRPC.secondaryClients = util.RemoveElement(sRPC.secondaryClients, req.ClientId)
-	} else if req.Role == 2 {
+	} else if req.Role == ServerRole(2) { // secondary server
 		sRPC.secondaryClients = append(sRPC.secondaryClients, req.ClientId)
 		sRPC.primaryClients = util.RemoveElement(sRPC.primaryClients, req.ClientId)
-	} else {
+	} else { // routing server. TODO: we should probably split the data structures that cache messages for primary/secondary vs being-routed-to clients
 		sRPC.primaryClients = util.RemoveElement(sRPC.primaryClients, req.ClientId)
 		sRPC.secondaryClients = util.RemoveElement(sRPC.secondaryClients, req.ClientId)
 	}
-	res.serverId = sRPC.serverId
+	res.ServerId = sRPC.serverId
 	return nil
 }
 

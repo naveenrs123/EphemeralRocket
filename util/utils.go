@@ -83,3 +83,13 @@ func RemoveElement(arr []string, elem string) []string {
 	}
 	return arr
 }
+
+// removes first element in array that matches string elem
+func FindElement(arr []string, elem string) bool {
+	for _, v := range arr {
+		if v == elem {
+			return true
+		}
+	}
+	return false
+}

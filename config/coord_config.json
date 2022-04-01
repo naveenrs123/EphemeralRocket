@@ -1,6 +1,6 @@
 {
-    "ClientListenAddr": "anvil.students.cs.ubc.ca:52069",
-    "ServerListenAddr": "anvil.students.cs.ubc.ca:52690",
+    "ClientListenAddr": "valdes.students.cs.ubc.ca:52069",
+    "ServerListenAddr": "valdes.students.cs.ubc.ca:52690",
     "LostMsgsThresh": 3,
-    "NumServers": 1
+    "NumServers": 3
   }

@@ -21,7 +21,7 @@ type ConnectRingReq struct {
 }
 
 type ConnectRingRes struct {
-	serverId uint8 // not really sure what this should be, feel free to change
+	ServerId uint8 // not really sure what this should be, feel free to change
 }
 
 type AssignRoleReq struct {
@@ -30,7 +30,7 @@ type AssignRoleReq struct {
 }
 
 type AssignRoleRes struct {
-	serverId uint8 // not really sure what this should be, feel free to change
+	ServerId uint8 // not really sure what this should be, feel free to change
 }
 
 type HandleFailureReq struct {
@@ -87,7 +87,7 @@ type PrimaryServerRes struct {
 
 // Server <-> Server
 type SendCachedMessagesReq struct {
-	messages map[int][]MessageStruct
+	messages map[string][]MessageStruct
 }
 type SendCachedMessagesRes struct {
 }

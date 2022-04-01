@@ -7,10 +7,10 @@ import (
 
 func main() {
 	var config implementation.ServerConfig
-	util.ReadJSONConfig("config/server_config.json1", &config)
+	util.ReadJSONConfig("config/server_config1.json", &config)
 	server := implementation.NewServer()
 
-	go server.Start(config)
+	server.Start(config)
 
 	// block := make(chan int)
 	// <-block

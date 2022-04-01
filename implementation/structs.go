@@ -86,6 +86,11 @@ type PrimaryServerRes struct {
 }
 
 // Server <-> Server
+type SendCachedMessagesReq struct {
+	messages map[int][]MessageStruct
+}
+type SendCachedMessagesRes struct {
+}
 
 // Common
 type MessageStruct struct {

@@ -29,6 +29,7 @@ type ServerRPC struct {
 	primaryClients   []string
 	secondaryClients []string
 	block            chan bool
+	cachedMessages   map[int][]MessageStruct // maps clientId -> list of messages
 }
 
 type Server struct {
@@ -160,55 +161,58 @@ func (sRPC *ServerRPC) AssignRole(req *AssignRoleReq, res *AssignRoleRes) error 
 // RetrieveMessages
 // Client calls this through MessageLib on its primary server. If a second client id is provided, retrieves unread messages
 // between the calling client and the other client. If not, retrieves all unread messages for the client. Returns a
-// slice of MessageStructs.
+// slice of MessageStructs. Also, after retrieval, the cached messages are deleted from the primary and secondary servers
 
 // HandleFailure
 // Coord calls this, informing the server about what its new role and adjacent servers are. The server
 // may need to forward any unacknowledged messages once the chain is reconfigured.
 
-// type HandleFailureReq struct {
-// 	PrevServerId   uint8
-// 	PrevServerAddr string
-// 	NextServerId   uint8
-// 	NextServerAddr string
-// 	ClientIds      []string
-// 	// Server needs to be aware of new clients that now see this server as their primary.
-// 	// List of client IDs. When HandleFailure is called, the server may now become a primary
-// 	// for some new clients.
+// Server must then retrieve cached data from one of its secondaries for the clients in ClientIds
+//}
 
-// 	// Server must then retrieve cached data from one of its secondaries for the clients in ClientIds
-// }
+func (sRPC *ServerRPC) HandleFailure(req *HandleFailureReq, res *interface{}) error {
+	// TODO: Recalibrate prev and next servers, add the clients that now have this server as its primary server.
+	// TODO: think about what happens to potentially lost messages
+	return nil
+}
 
-// func (sRPC *ServerRPC) HandleFailure(req *HandleFailureReq, res *interface{}) error {
-// 	// TODO: Recalibrate prev and next servers, add the clients that now have this server as its primary server.
-// 	// TODO: think about what happens to potentially lost messages
-
-// }
-
-// // RetrieveCachedMessages
-// // Server calls this when it is a new primary and needs to retrieve cached messages from one of its secondaries.
+// RetrieveCachedMessages
+// Server calls this when it is a new primary and needs to retrieve cached messages from one of its secondaries.
 
 // func (sRPC *ServerRPC) RetrieveCachedMessages(req *RetrieveCachedMessagesReq, res *RetrieveCachedMessagesRes) error {
 // 	// TODO: discuss as group. Do we need this? Unless there's information asymmetry between secondaries at any point, we don't need this.
 
 // }
 
-// // SendCachedMessages
-// // Server calls this when it is an existing primary and needs to send cached messages to a new secondary.
+// SendCachedMessages
+// Server calls this when it is an existing primary and needs to send cached messages to a new secondary.
 
-// func (sRPC *ServerRPC) SendCachedMessages(req *SendCachedMessagesReq, res *SendCachedMessagesRes) error {
-// 	s1, err := rpc.Dial("tcp", sRPC.nextServerAddr) // secondary 1
-// 	util.CheckErr(err, "Dialing s1 failure.")
-// 	s2, err := rpc.Dial("tcp", sRPC.prevServerAddr) // secondary 2
-// 	util.CheckErr(err, "Dialing s2 failure.")
+func (sRPC *ServerRPC) SendCachedMessages(req *SendCachedMessagesReq, res *interface{}) error {
 
-// 	s1.Close()
-// 	s2.Close()
+	cachedMessages := SendCachedMessagesReq{sRPC.cachedMessages}
 
-// }
+	s1, err := rpc.Dial("tcp", sRPC.nextServerAddr) // secondary 1
+	util.CheckErr(err, "Failed to dial s1.")
+	err = s1.Call("RecvCachedMessagesFromPrimary", cachedMessages, nil)
+	util.CheckErr(err, "Failed to send cached messages to s1.")
+	s1.Close()
+
+	s2, err := rpc.Dial("tcp", sRPC.prevServerAddr) // secondary 2
+	util.CheckErr(err, "Failed to dial s2.")
+	err = s2.Call("RecvCachedMessagesFromPrimary", cachedMessages, nil)
+	util.CheckErr(err, "Failed to send cached messages to s2.")
+	s2.Close()
+
+	return nil
+
+}
 
 // Required RPC Calls: END
 
 // Required Internal Methods: BEGIN
+func (sRPC *ServerRPC) RecvCachedMessagesFromPrimary(req *SendCachedMessagesReq, res *interface{}) error {
+	sRPC.cachedMessages = req.messages
+	return nil
+}
 
 // Required Internal Methods: END

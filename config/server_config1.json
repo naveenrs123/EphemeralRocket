@@ -1,0 +1,8 @@
+{
+  "ServerID": 1,
+  "CoordAddr": "anvil.students.cs.ubc.ca:52690",
+  "ServerAddr": "anvil.students.cs.ubc.ca:40109",
+  "ServerServerAddr": "anvil.students.cs.ubc.ca:40110",
+  "ServerListenAddr": "anvil.students.cs.ubc.ca:40111",
+  "ClientListenAddr": "anvil.students.cs.ubc.ca:40112"
+}

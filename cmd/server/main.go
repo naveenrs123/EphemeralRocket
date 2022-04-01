@@ -1,7 +1,17 @@
 package main
 
-import "fmt"
+import (
+	"ephemeralrocket/implementation"
+	"ephemeralrocket/util"
+)
 
 func main() {
-	fmt.Println("This is the server!")
+	var config implementation.ServerConfig
+	util.ReadJSONConfig("config/server_config.json1", &config)
+	server := implementation.NewServer()
+
+	go server.Start(config)
+
+	// block := make(chan int)
+	// <-block
 }

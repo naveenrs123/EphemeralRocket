@@ -122,16 +122,23 @@ func (c *CoordRPC) ClientJoin(req *ClientCoordReq, res *ClientJoinRes) error {
 // GetPrimaryServer
 // Client calls this through MessageLib, requesting the details of its primary server. Coord
 // returns the primary server for that client.
-func (c *CoordRPC) GetPrimaryServer(req *ClientCoordReq, res *GetPrimaryServerRes) error {
+func (c *CoordRPC) RetrievePrimaryServer(req *PrimaryServerReq, res *PrimaryServerRes) error {
+	res.ClientId = req.ClientId
+	if !c.IsRingReady {
+		res.ChainReady = false
+		return nil
+	}
+
 	if v, ok := c.PrimaryClientMap[req.ClientId]; ok {
 		// If a primary has been assigned, retrieve it.
-		res.PrimaryServerAddr = c.ServerDetailsMap[v].ClientAddr
+		res.PrimaryServerIPPort = c.ServerDetailsMap[v].ClientAddr
 	} else {
 		// Otherwise, assign a new primary and provide it to the client.
 		primaryServerId := AssignPrimaryServer(c)
 		c.PrimaryClientMap[req.ClientId] = primaryServerId
-		res.PrimaryServerAddr = c.ServerDetailsMap[primaryServerId].ClientAddr
+		res.PrimaryServerIPPort = c.ServerDetailsMap[primaryServerId].ClientAddr
 	}
+	res.ChainReady = true
 	return nil
 }
 

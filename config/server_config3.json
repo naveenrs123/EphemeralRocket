@@ -1,0 +1,8 @@
+{
+  "ServerID": 3,
+  "CoordAddr": "valdes.students.cs.ubc.ca:52690",
+  "ServerAddr": "valdes.students.cs.ubc.ca:40017",
+  "ServerServerAddr": "valdes.students.cs.ubc.ca:40018",
+  "ServerListenAddr": "valdes.students.cs.ubc.ca:40019",
+  "ClientListenAddr": "valdes.students.cs.ubc.ca:40020"
+}

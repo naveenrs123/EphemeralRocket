@@ -7,6 +7,7 @@ import (
 	"ephemeralrocket/util"
 	"fmt"
 	"os"
+	"strings"
 )
 
 var actions []string = []string{"View Messages", "Start a new converstaion", "Send Message", "quit"}
@@ -42,7 +43,7 @@ func main() {
 
 func HandleInput(input string, reader *bufio.Reader) {
 	fmt.Println("input ->", input)
-	switch input {
+	switch strings.TrimSpace(input) {
 	case "0":
 		fmt.Println("case 0")
 		ViewMessages()

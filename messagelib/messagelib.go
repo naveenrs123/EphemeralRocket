@@ -41,6 +41,11 @@ func (m *MessageLib) Start(config implementation.ClientConfig) (chan implementat
 	if cerr != nil {
 		return nil, fmt.Errorf("unable to connect to coord node, with error %e", cerr)
 	}
+	err := conn.SetLinger(0)
+	if err != nil {
+		fmt.Println(err)
+	}
+
 	m.clientId = config.ClientID
 	m.coordClient = *rpc.NewClient(conn)
 	m.coordIPPort = config.CoordAddr

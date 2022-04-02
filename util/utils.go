@@ -10,6 +10,8 @@ import (
 	"strings"
 )
 
+var serverConfig = ""
+
 func ReadJSONConfig(filename string, config interface{}) error {
 	configData, err := ioutil.ReadFile(filename)
 	if err != nil {

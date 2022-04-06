@@ -291,6 +291,17 @@ func MonitorServerFailures(c *CoordRPC) {
 			prevPrim, nextPrim := partitionPrimaryClients(failingServer.PrimaryClients)
 			prevSec, nextSec := partitionSecondaryClients(c, failingServer.SecondaryClients, failingServer.PrevId)
 
+			// Reconfigure primary client map based on partitioned clients.
+			for i, v := range c.PrimaryClientMap {
+				if v == failingServer.ServerId {
+					if util.FindElement(prevPrim, i) {
+						c.PrimaryClientMap[i] = prevServer.ServerId
+					} else {
+						c.PrimaryClientMap[i] = nextServer.ServerId
+					}
+				}
+			}
+
 			prevReq := HandleFailureReq{
 				PrevServerId:       prevServer.PrevId,
 				PrevServerAddr:     c.ServerDetailsMap[prevServer.PrevId].ServerAddr,
@@ -316,7 +327,10 @@ func MonitorServerFailures(c *CoordRPC) {
 			err = nextServerClient.Call("ServerRPC.HandleFailure", nextReq, &res)
 			util.CheckErr(err, "Error handling failure for next server, Server ID: %d", nextServer.ServerId)
 
+			// Reconfigure ring and remove failing server from the map.
 			prevServer.NextId, nextServer.PrevId = nextServer.ServerId, prevServer.ServerId
+			delete(c.ServerDetailsMap, failingServer.ServerId)
+
 			c.IsRingReady = true
 		default:
 			time.Sleep(50 * time.Millisecond)

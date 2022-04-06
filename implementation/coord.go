@@ -330,7 +330,6 @@ func MonitorServerFailures(c *CoordRPC) {
 			// Reconfigure ring and remove failing server from the map.
 			prevServer.NextId, nextServer.PrevId = nextServer.ServerId, prevServer.ServerId
 			delete(c.ServerDetailsMap, failingServer.ServerId)
-
 			c.IsRingReady = true
 		default:
 			time.Sleep(50 * time.Millisecond)

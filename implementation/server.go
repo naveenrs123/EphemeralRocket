@@ -30,6 +30,7 @@ type ServerRPC struct {
 	secondaryClients []string
 	block            chan bool
 	cachedMessages   map[string][]MessageStruct // maps clientId -> list of messages
+	// TODO: we probably need to split cachedMessages into 2, primaryCache and secondaryCache. This makes sense for when a secondary becomes a primary.
 }
 
 type Server struct {
@@ -124,18 +125,17 @@ func (s *Server) Start(config ServerConfig) error {
 // Required RPC Calls: BEGIN
 // ConnectRing
 // Coord calls this, informing the server what its adjacent servers are in the ring structure.
-func (sRPC *ServerRPC) ConnectRing(req *ConnectRingReq, res *ConnectRingRes) error {
+func (sRPC *ServerRPC) ConnectRing(req *ConnectRingReq, res *interface{}) error {
 	sRPC.nextServerAddr = req.NextServerAddr
 	sRPC.prevServerAddr = req.PrevServerAddr
 	// not using Ids because there doesn't seem to be a use, add them to sRPC struct if necessary
 
-	res.ServerId = sRPC.serverId
 	return nil
 }
 
 // AssignRole
 // Coord calls this, assigning the server a role as either a primary or secondary.
-func (sRPC *ServerRPC) AssignRole(req *AssignRoleReq, res *AssignRoleRes) error {
+func (sRPC *ServerRPC) AssignRole(req *AssignRoleReq, res *interface{}) error {
 	if req.Role == ServerRole(1) { // primary server
 		sRPC.primaryClients = append(sRPC.primaryClients, req.ClientId)
 		sRPC.secondaryClients = util.RemoveElement(sRPC.secondaryClients, req.ClientId)
@@ -146,7 +146,6 @@ func (sRPC *ServerRPC) AssignRole(req *AssignRoleReq, res *AssignRoleRes) error 
 		sRPC.primaryClients = util.RemoveElement(sRPC.primaryClients, req.ClientId)
 		sRPC.secondaryClients = util.RemoveElement(sRPC.secondaryClients, req.ClientId)
 	}
-	res.ServerId = sRPC.serverId
 	return nil
 }
 
@@ -170,9 +169,47 @@ func (sRPC *ServerRPC) AssignRole(req *AssignRoleReq, res *AssignRoleRes) error 
 // Server must then retrieve cached data from one of its secondaries for the clients in ClientIds
 //}
 
+// type HandleFailureReq struct {
+// 	PrevServerId   uint8
+// 	PrevServerAddr string
+// 	NextServerId   uint8
+// 	NextServerAddr string
+// 	ClientIds      []string
+// 	// Server needs to be aware of new clients that now see this server as their primary.
+// 	// List of client IDs. When HandleFailure is called, the server may now become a primary
+// 	// for some new clients.
+
+// 	// Server must then retrieve cached data from one of its secondaries for the clients in ClientIds
+// }
+
 func (sRPC *ServerRPC) HandleFailure(req *HandleFailureReq, res *interface{}) error {
 	// TODO: Recalibrate prev and next servers, add the clients that now have this server as its primary server.
 	// TODO: think about what happens to potentially lost messages
+
+	newNext := req.NextServerAddr
+	newPrev := req.PrevServerAddr
+
+	if sRPC.nextServerAddr != newNext && newNext != "" {
+		client, err := rpc.Dial("tcp", newNext)
+		util.CheckErr(err, "Failed to connect to new next server.")
+
+		// TODO: exchange relevant info to the next server
+
+		client.Close()
+	}
+
+	// if a new prev server address is sent, update this server's prev address
+	if newPrev != sRPC.prevServerAddr && newPrev != "" {
+		client, err := rpc.Dial("tcp", newPrev)
+		util.CheckErr(err, "Failed to connect to new next server.")
+
+		// TODO: exchange relevant info to the prev server
+		client.Close()
+	}
+
+	sRPC.nextServerAddr = newNext
+	sRPC.prevServerAddr = newPrev
+
 	return nil
 }
 
@@ -188,7 +225,7 @@ func (sRPC *ServerRPC) HandleFailure(req *HandleFailureReq, res *interface{}) er
 // Server calls this when it is an existing primary and needs to send cached messages to a new secondary.
 
 func (sRPC *ServerRPC) SendCachedMessages(req *SendCachedMessagesReq, res *interface{}) error {
-
+	// for argument maybe we need a direction and clientIds? For every clientId, send the cached messages over to the new secondary
 	cachedMessages := SendCachedMessagesReq{sRPC.cachedMessages}
 
 	s1, err := rpc.Dial("tcp", sRPC.nextServerAddr) // secondary 1

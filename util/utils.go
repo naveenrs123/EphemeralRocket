@@ -32,6 +32,20 @@ func CheckErr(err error, errfmsg string, fargs ...interface{}) {
 	}
 }
 
+// Create TCP connection with remote address
+func GetTCPConn(remoteAddr string) (*net.TCPConn, error) {
+	raddr, rerr := net.ResolveTCPAddr("tcp", remoteAddr)
+	if rerr != nil {
+		return nil, rerr
+	}
+	conn, connerr := net.DialTCP("tcp", nil, raddr)
+	if connerr != nil {
+		return nil, connerr
+	} else {
+		return conn, nil
+	}
+}
+
 // Serve an RPC connection that indefinitely listens for new calls
 func CreateRPCConn(listener *net.TCPListener) {
 	for {

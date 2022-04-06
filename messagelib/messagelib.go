@@ -1,10 +1,17 @@
 package messagelib
 
 import (
+	"bufio"
 	"ephemeralrocket/implementation"
+	"ephemeralrocket/util"
 	"fmt"
+	"io"
+	//"io/ioutil"
 	"net"
 	"net/rpc"
+	"os"
+
+	//"os"
 	"time"
 )
 
@@ -18,6 +25,8 @@ type MessageLib struct {
 	primaryReady        bool
 	messageChan         chan implementation.MessageStruct
 	quitChan            chan bool
+	writer              io.Writer
+	knownClients        []string
 }
 
 func NewMessageLib() *MessageLib {
@@ -29,6 +38,15 @@ Starts the message lib, connects to the coord, requests a primary server, and po
 where messages can be passed to the client. Returns error if message lib is unable to connect to the coord.
 **/
 func (m *MessageLib) Start(config implementation.ClientConfig) (chan implementation.MessageStruct, error) {
+	path, perr := os.Getwd()
+	if perr != nil {
+		//handle
+	}
+	f, ferr := os.CreateTemp(path, "messageliblog*")
+	if ferr != nil {
+		return nil, fmt.Errorf(ferr.Error())
+	}
+	m.writer = bufio.NewWriter(f)
 	laddr, lerr := net.ResolveTCPAddr("tcp", config.LocalCoordAddr)
 	if lerr != nil {
 		return nil, fmt.Errorf("unable to resolve local coord ipport %s, with error %e", config.LocalCoordAddr, lerr)
@@ -62,24 +80,25 @@ Requests a list of clients available to be messaged from the coord. This should 
 since we assume the coord never fails.
 **/
 func (m *MessageLib) ViewClients() []string {
-	for {
-		var req interface{}
-		var res implementation.RetrieveClientsRes
-		err := m.coordClient.Call("CoordRPC.RetrieveClients", &req, &res)
-		if err != nil {
-			fmt.Printf("Error encountered retrieving clients")
-			fmt.Println(err)
-			continue
-		}
-		return res.ClientIds
+	var req interface{}
+	var res implementation.RetrieveClientsRes
+	err := m.coordClient.Call("CoordRPC.RetrieveClients", &req, &res)
+	if err != nil {
+		// this error should never occur, coord should never fail
+		util.CheckErr(err, "Error retrieving clients")
 	}
+	m.knownClients = res.ClientIds
+	return res.ClientIds
 }
 
 /**
 Sends a message to a destination client. This call is blocking until the RPC call succeeds.
 Echos the message sent back, with a timestamp
 **/
-func (m *MessageLib) SendMessage(message implementation.MessageStruct) implementation.MessageStruct {
+func (m *MessageLib) SendMessage(message implementation.MessageStruct) (implementation.MessageStruct, error) {
+	if !m.isClientValid(message.DestinationId, false) {
+		return implementation.MessageStruct{}, fmt.Errorf("invalid client")
+	}
 	for {
 		if !m.primaryReady {
 			continue
@@ -93,7 +112,7 @@ func (m *MessageLib) SendMessage(message implementation.MessageStruct) implement
 		}
 		break
 	}
-	return message
+	return message, nil
 }
 
 /**
@@ -152,6 +171,28 @@ outer:
 
 }
 
+func (m *MessageLib) isClientValid(clientId string, checkCoord bool) bool {
+	if checkCoord { // call RPC call in coord to retrieve current list of clients, then cache it
+		var req interface{}
+		var res implementation.RetrieveClientsRes
+		err := m.coordClient.Call("CoordRPC.RetrieveClients", &req, &res)
+		if err != nil {
+			// this should never happen because the coord should never fail
+			util.CheckErr(err, "Error retrieving clients")
+		}
+		m.knownClients = res.ClientIds
+	}
+	if util.FindElement(m.knownClients, clientId) {
+		return true
+	} else {
+		if !checkCoord { // if coord wasn't checked, call method again and check coord
+			return m.isClientValid(clientId, true)
+		} else {
+			return false
+		}
+	}
+}
+
 func (m *MessageLib) GetPrimaryServer() {
 	var result implementation.PrimaryServerRes
 
@@ -163,32 +204,18 @@ func (m *MessageLib) GetPrimaryServer() {
 		}
 
 		if !result.ChainReady {
-			fmt.Println("Server chain not ready yet")
+			fmt.Fprintln(m.writer, "Server chain not ready yet")
 			time.Sleep(time.Millisecond * 100)
 			continue
 		}
 		break
 	}
 	m.primaryServerIPPort = result.PrimaryServerIPPort
-	serverConn, err := getTCPConn(m.primaryServerIPPort)
+	serverConn, err := util.GetTCPConn(m.primaryServerIPPort)
 	if err != nil {
 		m.primaryReady = false
 	} else {
 		m.serverClient = *rpc.NewClient(serverConn)
 		m.primaryReady = true
 	}
-}
-
-func getTCPConn(remoteAddr string) (*net.TCPConn, error) {
-	raddr, rerr := net.ResolveTCPAddr("tcp", remoteAddr)
-	if rerr != nil {
-		return nil, rerr
-	}
-	conn, connerr := net.DialTCP("tcp", nil, raddr)
-	if connerr != nil {
-		return nil, connerr
-	} else {
-		return conn, nil
-	}
-
 }

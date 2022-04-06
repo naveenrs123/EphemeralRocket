@@ -1,7 +1,7 @@
 package implementation
 
 import (
-	fchecker "ephemeralrocket/cmd/fcheck"
+	fchecker "ephemeralrocket/fcheck"
 	"ephemeralrocket/util"
 	"net"
 	"net/rpc"

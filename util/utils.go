@@ -95,3 +95,12 @@ func FindElement(arr []string, elem string) bool {
 	}
 	return false
 }
+
+func FindIndex(str []string, x string) int {
+	for i, v := range str {
+		if v == x {
+			return i
+		}
+	}
+	return -1
+}

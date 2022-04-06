@@ -34,11 +34,12 @@ type AssignRoleRes struct {
 }
 
 type HandleFailureReq struct {
-	PrevServerId   uint8
-	PrevServerAddr string
-	NextServerId   uint8
-	NextServerAddr string
-	ClientIds      []string
+	PrevServerId       uint8
+	PrevServerAddr     string
+	NextServerId       uint8
+	NextServerAddr     string
+	PrimaryClientIds   []string
+	SecondaryClientIds []string
 	// Server needs to be aware of new clients that now see this server as their primary.
 	// List of client IDs. When HandleFailure is called, the server may now become a primary
 	// for some new clients.

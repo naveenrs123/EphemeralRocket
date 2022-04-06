@@ -64,6 +64,16 @@ type RetrieveClientsRes struct {
 	ClientIds []string
 }
 
+type ForwardMessageReq struct {
+	ServerId     uint8
+	Message      MessageStruct
+}
+
+type ForwardMessageRes struct {
+	ServerId     uint8
+	Message      MessageStruct
+}
+
 // Client <-> Server
 type RetrieveMessageReq struct {
 	ClientId       string

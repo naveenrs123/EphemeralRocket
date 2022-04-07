@@ -41,7 +41,7 @@ func main() {
 
 	for {
 		DisplayActions(0, 3)
-		text, _ := reader.ReadString('\n')
+		text := GetInput(reader)
 		if HandleInput(text, reader, config) {
 			return
 		}
@@ -51,7 +51,7 @@ func main() {
 }
 
 func HandleInput(input string, reader *bufio.Reader, config implementation.ClientConfig) bool {
-	switch strings.TrimSpace(input) {
+	switch input {
 	case "0":
 		fmt.Println("case 0")
 		ViewMessages(reader)
@@ -79,9 +79,9 @@ func ViewClients() {
 func SendMessage(reader *bufio.Reader, config implementation.ClientConfig) {
 	ViewClients()
 	fmt.Println("which client would you like to message")
-	dest, _ := reader.ReadString('\n')
+	dest := GetInput(reader)
 	fmt.Print("Compose you message \n🚀")
-	mess, _ := reader.ReadString('\n')
+	mess := GetInput(reader)
 	message := implementation.MessageStruct{config.ClientID, dest, mess, time.Now()}
 	res, err := client.SendMessage(message)
 	util.CheckErr(err, "Error Sending Message")
@@ -94,7 +94,7 @@ func ViewMessages(reader *bufio.Reader) {
 	for k, _ := range MesMap {
 		fmt.Println(k)
 	}
-	user, _ := reader.ReadString('\n')
+	user := GetInput(reader)
 	if _, ok := MesMap[user]; ok {
 		for _, v := range MesMap[user] {
 			fmt.Printf("%s: %s\n", v.SourceId, v.Data)
@@ -141,4 +141,9 @@ func DisplayActions(start int, stop int) {
 		fmt.Printf("%d: %s\n", n, val)
 	}
 	fmt.Print("\n")
+}
+
+func GetInput(reader *bufio.Reader) string {
+	in, _ := reader.ReadString('\n')
+	return strings.TrimSpace(in)
 }

@@ -129,14 +129,14 @@ func (s *Server) Start(config ServerConfig) error {
 // Required RPC Calls: BEGIN
 // ConnectRing
 // Coord calls this, informing the server what its adjacent servers are in the ring structure.
-func (sRPC *ServerRPC) ConnectRing(req *ConnectRingReq, res *ConnectRingRes) error {
+func (sRPC *ServerRPC) ConnectRing(req *ConnectRingReq, res *interface{}) error {
 	sRPC.nextServerAddr = req.NextServerAddr
 	sRPC.prevServerAddr = req.PrevServerAddr
 	// not using Ids because there doesn't seem to be a use, add them to sRPC struct if necessary
 	sRPC.nextServerId = req.NextServerId
 	sRPC.prevServerId = req.PrevServerId
 
-	res.ServerId = sRPC.serverId
+	// res = sRPC.serverId
 	return nil
 }
 
@@ -170,7 +170,7 @@ func (sRPC *ServerRPC) ReceiveSenderMessage(req *MessageStruct, res *MessageStru
 	}
 	// select random direction to send message in (prev or next)
 	serverAddr, serverId := ChooseRandomDirection(sRPC)
-	
+
 	conn, connerr := util.GetTCPConn(serverAddr)
 	if connerr != nil {
 		// handle error, cache message as not forwarded
@@ -311,7 +311,7 @@ func (sRPC *ServerRPC) RecvCachedMessagesFromPrimary(req *SendCachedMessagesReq,
 // randomly chooses either prev or next server addr and id to send a message in that direction
 func ChooseRandomDirection(sRPC *ServerRPC) (string, uint8) {
 	now := time.Now().Nanosecond()
-	if now % 2 == 0 {
+	if now%2 == 0 {
 		return sRPC.nextServerAddr, sRPC.nextServerId
 	} else {
 		return sRPC.prevServerAddr, sRPC.prevServerId

@@ -129,14 +129,14 @@ func (s *Server) Start(config ServerConfig) error {
 // Required RPC Calls: BEGIN
 // ConnectRing
 // Coord calls this, informing the server what its adjacent servers are in the ring structure.
-func (sRPC *ServerRPC) ConnectRing(req *ConnectRingReq, res *ConnectRingRes) error {
+func (sRPC *ServerRPC) ConnectRing(req *ConnectRingReq, res *interface{}) error {
 	sRPC.nextServerAddr = req.NextServerAddr
 	sRPC.prevServerAddr = req.PrevServerAddr
 	// not using Ids because there doesn't seem to be a use, add them to sRPC struct if necessary
 	sRPC.nextServerId = req.NextServerId
 	sRPC.prevServerId = req.PrevServerId
 
-	res.ServerId = sRPC.serverId
+	// res = sRPC.serverId
 	return nil
 }
 
@@ -161,6 +161,7 @@ func (sRPC *ServerRPC) AssignRole(req *AssignRoleReq, res *AssignRoleRes) error 
 // Client calls this through MessageLib. Server will receive a MessageStruct from the client and will
 // start sending it through the ring to the primary server of the receiver.
 func (sRPC *ServerRPC) ReceiveSenderMessage(req *MessageStruct, res *MessageStruct) error {
+	fmt.Printf("SERVER%d LOG: Received sender message from %s\n", sRPC.serverId, req.SourceId)
 	if util.FindElement(sRPC.primaryClients, req.DestinationId) { // this server is also the primary server for the destination client
 		cachedMessages := sRPC.cachedMessages[req.DestinationId]
 		cachedMessages = append(cachedMessages, *req)
@@ -170,7 +171,7 @@ func (sRPC *ServerRPC) ReceiveSenderMessage(req *MessageStruct, res *MessageStru
 	}
 	// select random direction to send message in (prev or next)
 	serverAddr, serverId := ChooseRandomDirection(sRPC)
-	
+
 	conn, connerr := util.GetTCPConn(serverAddr)
 	if connerr != nil {
 		// handle error, cache message as not forwarded
@@ -182,7 +183,7 @@ func (sRPC *ServerRPC) ReceiveSenderMessage(req *MessageStruct, res *MessageStru
 	if err != nil {
 		// handle error, cache message as not forwarded
 	}
-	fmt.Printf("Message from client: %s to client %s forwarded to server with id %d", req.SourceId, req.DestinationId, serverId)
+	fmt.Printf("SERVER%d LOG: Message from client: %s to client %s forwarded to server with id %d\n", sRPC.serverId, req.SourceId, req.DestinationId, serverId)
 	res = req
 	client.Close()
 	return nil
@@ -192,9 +193,10 @@ func (sRPC *ServerRPC) ReceiveSenderMessage(req *MessageStruct, res *MessageStru
 // Server calls this, forwarding the message to the next server in the chain. Cache the message
 // if it cannot be forwarded, so that it can be forwarded once the server failures are handled.
 func (sRPC *ServerRPC) ForwardMessage(req *ForwardMessageReq, res *ForwardMessageRes) error {
+	fmt.Printf("SERVER%d LOG: Received a forwarded message from client '%s' to client '%s'\n",sRPC.serverId, req.Message.SourceId, req.Message.DestinationId)
 	msg := req.Message
 	if util.FindElement(sRPC.primaryClients, msg.DestinationId) { // this server is the primary server for the destination client
-		fmt.Printf("%s is the primary server for client %s", sRPC.serverAddr, req.Message.SourceId)
+		fmt.Printf("SERVER%d LOG: this is the primary server for client %s", sRPC.serverId, req.Message.SourceId)
 		// cache messages
 		currMessages := sRPC.cachedMessages[msg.DestinationId]
 		currMessages = append(currMessages, msg)
@@ -217,7 +219,7 @@ func (sRPC *ServerRPC) ForwardMessage(req *ForwardMessageReq, res *ForwardMessag
 			// handle error, cache message as unacked
 		}
 		client.Close()
-		fmt.Printf("Message from client: %s to client %s forwarded to server with id %d", req.Message.SourceId, req.Message.DestinationId, serverId)
+		fmt.Printf("SERVER%d LOG: Message from client: %s to client %s forwarded to server with id %d\n",sRPC.serverId, req.Message.SourceId, req.Message.DestinationId, serverId)
 		res.ServerId = sRPC.serverId
 		res.Message = msg
 		return nil
@@ -311,7 +313,7 @@ func (sRPC *ServerRPC) RecvCachedMessagesFromPrimary(req *SendCachedMessagesReq,
 // randomly chooses either prev or next server addr and id to send a message in that direction
 func ChooseRandomDirection(sRPC *ServerRPC) (string, uint8) {
 	now := time.Now().Nanosecond()
-	if now % 2 == 0 {
+	if now%2 == 0 {
 		return sRPC.nextServerAddr, sRPC.nextServerId
 	} else {
 		return sRPC.prevServerAddr, sRPC.prevServerId

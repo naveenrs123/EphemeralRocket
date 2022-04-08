@@ -33,7 +33,6 @@ type ServerRPC struct {
 	primaryClients   []string
 	secondaryClients []string
 	block            chan bool
-	cachedMessages   map[string][]MessageStruct // maps clientId -> list of messages
 
 	primaryClientMessages   map[string][]MessageStruct // primary clients' messages
 	secondaryClientMessages map[string][]MessageStruct // secondary clients' messages
@@ -75,16 +74,17 @@ func SetupListeners(sRPC *ServerRPC, serverListenAddr string, addrToSendToCoord 
 func (s *Server) Start(config ServerConfig) error {
 
 	s.sRPC = ServerRPC{
-		serverId:         config.ServerId,
-		serverAddr:       config.ServerAddr,
-		coordAddr:        config.CoordAddr,
-		serverListenAddr: config.ServerListenAddr, // address for coord to call rpc methods on this server
-		clientListenAddr: config.ClientListenAddr, // address for client to call rpc methods on this server
-		prevServerAddr:   "",
-		nextServerAddr:   "",
-		serverServerAddr: config.ServerServerAddr, // address for server to call rpc methods on this server
-		block:            make(chan bool),
-		cachedMessages:   make(map[string][]MessageStruct),
+		serverId:                config.ServerId,
+		serverAddr:              config.ServerAddr,
+		coordAddr:               config.CoordAddr,
+		serverListenAddr:        config.ServerListenAddr, // address for coord to call rpc methods on this server
+		clientListenAddr:        config.ClientListenAddr, // address for client to call rpc methods on this server
+		prevServerAddr:          "",
+		nextServerAddr:          "",
+		serverServerAddr:        config.ServerServerAddr, // address for server to call rpc methods on this server
+		block:                   make(chan bool),
+		primaryClientMessages:   make(map[string][]MessageStruct),
+		secondaryClientMessages: make(map[string][]MessageStruct),
 	}
 
 	server := rpc.NewServer()
@@ -171,9 +171,9 @@ func AssignRoleHelper(req *AssignRoleReq, sRPC *ServerRPC) error {
 func (sRPC *ServerRPC) ReceiveSenderMessage(req *MessageStruct, res *MessageStruct) error {
 	fmt.Printf("SERVER%d LOG: Received sender message from %s\n", sRPC.serverId, req.SourceId)
 	if util.FindElement(sRPC.primaryClients, req.DestinationId) { // this server is also the primary server for the destination client
-		cachedMessages := sRPC.cachedMessages[req.DestinationId]
+		cachedMessages := sRPC.primaryClientMessages[req.DestinationId]
 		cachedMessages = append(cachedMessages, *req)
-		sRPC.cachedMessages[req.DestinationId] = cachedMessages
+		sRPC.primaryClientMessages[req.DestinationId] = cachedMessages
 		res = req
 		return nil
 	}
@@ -204,12 +204,14 @@ func (sRPC *ServerRPC) ForwardMessage(req *ForwardMessageReq, res *ForwardMessag
 	fmt.Printf("SERVER%d LOG: Received a forwarded message from client '%s' to client '%s'\n", sRPC.serverId, req.Message.SourceId, req.Message.DestinationId)
 	msg := req.Message
 	if util.FindElement(sRPC.primaryClients, msg.DestinationId) { // this server is the primary server for the destination client
-		fmt.Printf("SERVER%d LOG: this is the primary server for client %s", sRPC.serverId, req.Message.SourceId)
+		fmt.Printf("SERVER%d LOG: this is the primary server for client %s\n", sRPC.serverId, req.Message.SourceId)
 		// cache messages
-		currMessages := sRPC.cachedMessages[msg.DestinationId]
+		currMessages := sRPC.primaryClientMessages[msg.DestinationId]
 		currMessages = append(currMessages, msg)
-		sRPC.cachedMessages[msg.DestinationId] = currMessages
-		//TODO: make RPC call to secondary servers to cache message
+		sRPC.primaryClientMessages[msg.DestinationId] = currMessages
+		msgMap := make(map[string][]MessageStruct)
+		msgMap[msg.DestinationId] = append([]MessageStruct{}, msg)
+		CacheMessagesInSecondaries(sRPC, msgMap)
 		res.ServerId = sRPC.serverId
 		res.Message = msg
 		return nil
@@ -217,14 +219,14 @@ func (sRPC *ServerRPC) ForwardMessage(req *ForwardMessageReq, res *ForwardMessag
 		serverAddr, serverId := GetOtherServerAddrAndId(sRPC, req.ServerId)
 		conn, connerr := util.GetTCPConn(serverAddr)
 		if connerr != nil {
-			// handle error, cache message as unacked
+			//TODO: handle error, cache message as unacked
 		}
 		fwdReq := ForwardMessageReq{ServerId: sRPC.serverId, Message: req.Message}
 		var fwdRes ForwardMessageRes
 		client := rpc.NewClient(conn)
 		err := client.Call("ServerRPC.ForwardMessage", &fwdReq, &fwdRes)
 		if err != nil {
-			// handle error, cache message as unacked
+			//TODO: handle error, cache message as unacked
 		}
 		client.Close()
 		fmt.Printf("SERVER%d LOG: Message from client: %s to client %s forwarded to server with id %d\n", sRPC.serverId, req.Message.SourceId, req.Message.DestinationId, serverId)
@@ -235,35 +237,23 @@ func (sRPC *ServerRPC) ForwardMessage(req *ForwardMessageReq, res *ForwardMessag
 }
 
 // RetrieveMessages
-// Client calls this through MessageLib on its primary server. If a second client id is provided, retrieves unread messages
-// between the calling client and the other client. If not, retrieves all unread messages for the client. Returns a
+// Client calls this through MessageLib on its primary server. Retrieves all unread messages for the client. Returns a
 // slice of MessageStructs. Also, after retrieval, the cached messages are deleted from the primary and secondary servers
 func (sRPC *ServerRPC) RetrieveMessages(req *RetrieveMessageReq, res *RetrieveMessageRes) error {
-	if req.SourceClientId == "" { // retrieve all messages
-		messages := sRPC.cachedMessages[req.ClientId]
-		delete(sRPC.cachedMessages, req.ClientId)
-		//TODO: make RPC call to secondary servers to clear cache!
-		res.ClientId = req.ClientId
-		res.Messages = messages
-		return nil
-	} else {
-		cachedMessages := sRPC.cachedMessages[req.ClientId]
-		messages := []MessageStruct{}
-		leftovers := []MessageStruct{}
-		for i := range cachedMessages {
-			msg := cachedMessages[i]
-			if msg.SourceId != req.SourceClientId {
-				leftovers = append(leftovers, msg)
-			} else {
-				messages = append(messages, msg)
-			}
+	if messages, ok := sRPC.primaryClientMessages[req.ClientId]; ok {
+		delete(sRPC.primaryClientMessages, req.ClientId)
+		//if messages were deleted, clear cache in secondary servers
+		if len(messages) != 0 {
+			ClearCacheMessagesInSecondaries(sRPC, req.ClientId)
 		}
-		sRPC.cachedMessages[req.ClientId] = leftovers
-		//TODO: make RPC call to secondary servers to clear cache!
 		res.ClientId = req.ClientId
 		res.Messages = messages
-		return nil
+
+	} else {
+		res.ClientId = req.ClientId
+		res.Messages = make([]MessageStruct, 0)
 	}
+	return nil
 }
 
 // HandleFailure
@@ -392,8 +382,75 @@ func (sRPC *ServerRPC) GetCachedMessagesFromPrimary(req *GetCachedMessagesFromPr
 
 // Required Internal Methods: BEGIN
 func (sRPC *ServerRPC) RecvCachedMessagesFromPrimary(req *SendCachedMessagesReq, res *interface{}) error {
-	sRPC.cachedMessages = req.messages
+	fmt.Printf("SERVER%d LOG: Secondary server received cache request from primary server\n", sRPC.serverId)
+	msgMap := req.Messages
+	for key, element := range msgMap {
+		if val, ok := sRPC.secondaryClientMessages[key]; ok {
+			newMessages := append(val, element...)
+			sRPC.secondaryClientMessages[key] = newMessages
+		} else {
+			sRPC.secondaryClientMessages[key] = element
+		}
+	}
 	return nil
+}
+
+func (sRPC *ServerRPC) ClearCache(req *ClearCacheReq, res *interface{}) error {
+	fmt.Printf("SERVER%d LOG: Secondary server received cache delection request from primary server for client with id '%s'\n", sRPC.serverId, req.ClientId)
+	delete(sRPC.secondaryClientMessages, req.ClientId)
+	return nil
+}
+
+func ClearCacheMessagesInSecondaries(sRPC *ServerRPC, clientId string) {
+	connPrev, connPrevErr := util.GetTCPConn(sRPC.prevServerAddr)
+	if connPrevErr != nil {
+		fmt.Printf("Error encountered connecting to prev server %e\n", connPrevErr)
+	}
+	prevClient := rpc.NewClient(connPrev)
+	req := ClearCacheReq{ClientId: clientId}
+	var res interface{}
+	err := prevClient.Call("ServerRPC.ClearCache", &req, &res)
+	if err != nil {
+		fmt.Printf("Error encountered making rpc call %e\n", err)
+	}
+	prevClient.Close()
+	connNext, connNextErr := util.GetTCPConn(sRPC.nextServerAddr)
+	if connNextErr != nil {
+		fmt.Printf("Error encountered connecting to next server %e\n", connPrevErr)
+	}
+	nextClient := rpc.NewClient(connNext)
+	err = nextClient.Call("ServerRPC.ClearCache", &req, &res)
+	if err != nil {
+		fmt.Printf("Error encountered making rpc call %e\n", err)
+	}
+	nextClient.Close()
+
+}
+
+func CacheMessagesInSecondaries(sRPC *ServerRPC, messages map[string][]MessageStruct) {
+	connPrev, connPrevErr := util.GetTCPConn(sRPC.prevServerAddr)
+	if connPrevErr != nil {
+		fmt.Printf("Error encountered connecting to prev server %e\n", connPrevErr)
+	}
+	prevClient := rpc.NewClient(connPrev)
+	req := SendCachedMessagesReq{Messages: messages}
+	var res interface{}
+	err := prevClient.Call("ServerRPC.RecvCachedMessagesFromPrimary", &req, &res)
+	if err != nil {
+		fmt.Printf("Error encountered making rpc call %e\n", err)
+	}
+	prevClient.Close()
+	connNext, connNextErr := util.GetTCPConn(sRPC.nextServerAddr)
+	if connNextErr != nil {
+		fmt.Printf("Error encountered connecting to next server %e\n", connPrevErr)
+	}
+	nextClient := rpc.NewClient(connNext)
+	err = nextClient.Call("ServerRPC.RecvCachedMessagesFromPrimary", &req, &res)
+	if err != nil {
+		fmt.Printf("Error encountered making rpc call %e\n", err)
+	}
+	nextClient.Close()
+
 }
 
 // randomly chooses either prev or next server addr and id to send a message in that direction

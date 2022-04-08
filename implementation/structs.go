@@ -78,7 +78,6 @@ type ForwardMessageRes struct {
 // Client <-> Server
 type RetrieveMessageReq struct {
 	ClientId       string
-	SourceClientId string // leave as "" to retrieve all unread messages.
 }
 
 type RetrieveMessageRes struct {
@@ -105,9 +104,13 @@ type GetCachedMessagesFromPrimaryRes struct {
 }
 
 type SendCachedMessagesReq struct {
-	messages map[string][]MessageStruct
+	Messages map[string][]MessageStruct
 }
 type SendCachedMessagesRes struct {
+}
+
+type ClearCacheReq struct {
+	ClientId      string
 }
 
 // Common

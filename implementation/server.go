@@ -293,7 +293,6 @@ func (sRPC *ServerRPC) HandleFailure(req *HandleFailureReq, res *interface{}) er
 	newNext := req.NextServerAddr
 	newPrev := req.PrevServerAddr
 	// s1 -> s2 -> s3
-	// s1
 
 	// Handles case when server becomes primary for clients
 	for _, id := range req.PrimaryClientIds {
@@ -307,6 +306,7 @@ func (sRPC *ServerRPC) HandleFailure(req *HandleFailureReq, res *interface{}) er
 		delete(sRPC.secondaryClientMessages, id)
 	}
 
+	// s1
 	if sRPC.nextServerAddr != newNext && newNext != "" {
 		client, err := rpc.Dial("tcp", newNext)
 		util.CheckErr(err, "Failed to connect to new next server.")
@@ -319,7 +319,7 @@ func (sRPC *ServerRPC) HandleFailure(req *HandleFailureReq, res *interface{}) er
 			err = client.Call("ServerRPC.GetCachedMessagesFromPrimary", &req, &resPrimaryClientMessages)
 
 			// get all the primary client messages from the primary server and make this server store them in secondaryClientMessages
-			for clientId, _ := range resPrimaryClientMessages.messages {
+			for clientId := range resPrimaryClientMessages.messages {
 
 				assignReq := AssignRoleReq{clientId, ServerRole(2)}
 				AssignRoleHelper(&assignReq, sRPC)
@@ -345,7 +345,7 @@ func (sRPC *ServerRPC) HandleFailure(req *HandleFailureReq, res *interface{}) er
 			err = client.Call("ServerRPC.GetCachedMessagesFromPrimary", &req, &resPrimaryClientMessages)
 
 			// get all the primary client messages from the primary server and make this server store them in secondaryClientMessages
-			for clientId, _ := range resPrimaryClientMessages.messages {
+			for clientId := range resPrimaryClientMessages.messages {
 
 				assignReq := AssignRoleReq{clientId, ServerRole(2)}
 				AssignRoleHelper(&assignReq, sRPC)

@@ -55,7 +55,9 @@ func HandleInput(input string, reader *bufio.Reader) {
 		SendMessage(reader)
 	case "3":
 		fmt.Println("case 3")
-		fmt.Println("You thought you could quit, how foolish, you're stuck on this 🚀 forever muhahahaha")
+		client.Stop()
+		fmt.Println("Goodbye!")
+		//fmt.Println("You thought you could quit, how foolish, you're stuck on this 🚀 forever muhahahaha")
 	}
 }
 

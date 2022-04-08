@@ -34,6 +34,7 @@ type StartStruct struct {
 	EpochNonce             uint64
 	HBeatLocalIPPortList   []string // list of local ip:ports that will be monitoring servers and responding to hbeats.
 	HBeatRemoteIPPortList  []string // list of remote ip:ports for the monitored servers, sorted by server id.
+	ServerIds              []uint8
 	LostMsgThresh          uint8
 }
 
@@ -85,9 +86,11 @@ func Start(arg StartStruct) (notifyCh <-chan FailureDetected, err error) {
 // Tells the library to stop monitoring/responding acks.
 func Stop() {
 	running = false
+
 	if stopRespond != nil {
 		stopRespond <- true
 	}
+
 	if stopMonitor != nil {
 		for i := 0; i < monitorCount; i++ {
 			stopMonitor <- true
@@ -184,18 +187,17 @@ func monitor(conn *net.UDPConn, notifyCh chan<- FailureDetected, stopCh <-chan b
 				if lost > arg.LostMsgThresh {
 					notifyCh <- FailureDetected{
 						UDPIpPort: arg.HBeatRemoteIPPortList[addrIdx],
-						ServerID:  uint8(addrIdx) + 1, // ServerID should be index + 1 since list of remote IPs is sorted
-						Timestamp: time.Now()}
+						ServerID:  arg.ServerIds[addrIdx],
+						Timestamp: time.Now(),
+					}
 					monitorCount--
 					return
 				}
 				break // send a HBeatMessage again
 			}
 			recvTime := time.Now()
-
 			lost = 0
 			ack, _ := decodeAck(res, len)
-			//fmt.Printf("**ACK: %v**\n", ack)
 
 			if ack.HBEatEpochNonce != arg.EpochNonce {
 				break // ignore AckMessage that doesn't match the current EpochNonce
@@ -234,7 +236,6 @@ func decodeHBeat(buf []byte, len int) (HBeatMessage, error) {
 	}
 	return decoded, nil
 }
-
 func decodeAck(buf []byte, len int) (AckMessage, error) {
 	var decoded AckMessage
 	err := gob.NewDecoder(bytes.NewBuffer(buf[0:len])).Decode(&decoded)

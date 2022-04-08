@@ -66,13 +66,13 @@ type RetrieveClientsRes struct {
 }
 
 type ForwardMessageReq struct {
-	ServerId     uint8
-	Message      MessageStruct
+	ServerId uint8
+	Message  MessageStruct
 }
 
 type ForwardMessageRes struct {
-	ServerId     uint8
-	Message      MessageStruct
+	ServerId uint8
+	Message  MessageStruct
 }
 
 // Client <-> Server
@@ -97,6 +97,13 @@ type PrimaryServerRes struct {
 }
 
 // Server <-> Server
+type GetCachedMessagesFromPrimaryReq struct {
+}
+
+type GetCachedMessagesFromPrimaryRes struct {
+	messages map[string][]MessageStruct
+}
+
 type SendCachedMessagesReq struct {
 	messages map[string][]MessageStruct
 }

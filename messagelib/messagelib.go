@@ -1,16 +1,12 @@
 package messagelib
 
 import (
-	"bufio"
 	"ephemeralrocket/implementation"
 	"ephemeralrocket/util"
 	"fmt"
-	"io"
-
 	//"io/ioutil"
 	"net"
 	"net/rpc"
-	"os"
 
 	//"os"
 	"time"
@@ -26,7 +22,6 @@ type MessageLib struct {
 	primaryReady        bool
 	messageChan         chan implementation.MessageStruct
 	quitChan            chan bool
-	writer              io.Writer
 	knownClients        []string
 }
 
@@ -39,15 +34,6 @@ Starts the message lib, connects to the coord, requests a primary server, and po
 where messages can be passed to the client. Returns error if message lib is unable to connect to the coord.
 **/
 func (m *MessageLib) Start(config implementation.ClientConfig) (chan implementation.MessageStruct, error) {
-	path, perr := os.Getwd()
-	if perr != nil {
-		//handle
-	}
-	f, ferr := os.CreateTemp(path, "messageliblog*")
-	if ferr != nil {
-		return nil, fmt.Errorf(ferr.Error())
-	}
-	m.writer = bufio.NewWriter(f)
 	laddr, lerr := net.ResolveTCPAddr("tcp", config.LocalCoordAddr)
 	if lerr != nil {
 		return nil, fmt.Errorf("unable to resolve local coord ipport %s, with error %e", config.LocalCoordAddr, lerr)
@@ -97,7 +83,6 @@ Sends a message to a destination client. This call is blocking until the RPC cal
 Echos the message sent back, with a timestamp
 **/
 func (m *MessageLib) SendMessage(message implementation.MessageStruct) (implementation.MessageStruct, error) {
-	fmt.Printf("SERVER LOG: clientID: %s\n", message.DestinationId)
 	if !m.isClientValid(message.DestinationId, false) {
 		return implementation.MessageStruct{}, fmt.Errorf("invalid client")
 	}
@@ -121,13 +106,13 @@ func (m *MessageLib) SendMessage(message implementation.MessageStruct) (implemen
 Retrieve messages from the primary server. If source client id is not nil, it only returns messages from that source client.
 This call is blocking until the RPC call succeeds
 **/
-func (m *MessageLib) RetrieveMessages(sourceClientId string) []implementation.MessageStruct {
+func (m *MessageLib) RetrieveMessages() []implementation.MessageStruct {
 	var res implementation.RetrieveMessageRes
 	for {
 		if !m.primaryReady {
 			continue
 		}
-		req := implementation.RetrieveMessageReq{ClientId: m.clientId, SourceClientId: sourceClientId}
+		req := implementation.RetrieveMessageReq{ClientId: m.clientId}
 		err := m.serverClient.Call("ServerRPC.RetrieveMessages", &req, &res)
 		if err != nil {
 			m.GetPrimaryServer()
@@ -206,7 +191,6 @@ func (m *MessageLib) GetPrimaryServer() {
 		}
 
 		if !result.ChainReady {
-			fmt.Fprintln(m.writer, "Server chain not ready yet")
 			time.Sleep(time.Millisecond * 100)
 			continue
 		}

@@ -107,7 +107,7 @@ func (m *MessageLib) SendMessage(message implementation.MessageStruct) (implemen
 		}
 		message.Timestamp = time.Now()
 
-		err := m.serverClient.Call("ServerRPC.SendMessage", &message, &message)
+		err := m.serverClient.Call("ServerRPC.ReceiveSenderMessage", &message, &message)
 		if err != nil {
 			m.GetPrimaryServer()
 			continue

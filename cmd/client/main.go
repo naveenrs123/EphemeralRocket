@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -30,7 +31,7 @@ func main() {
 	util.CheckErr(err, "Error starting messagelib:")
 
 	fmt.Println("Welcome to the super Ephemeral Rocket 🚀")
-	fmt.Println("---------------------")
+	fmt.Println("⭐🌝⭐🌚⭐🌝⭐🌚⭐🌝⭐🌚⭐🌝⭐🌚⭐🌝⭐🌚⭐🌝⭐🌚⭐🌝⭐")
 
 	MesMap = make(map[string][]implementation.MessageStruct)
 	reader := bufio.NewReader(os.Stdin)
@@ -53,16 +54,10 @@ func main() {
 func HandleInput(input string, reader *bufio.Reader, config implementation.ClientConfig) bool {
 	switch input {
 	case "0":
-		fmt.Println("case 0")
 		ViewMessages(reader)
-	// case "1":
-	// 	fmt.Println("case 1")
-	// 	ViewClients()
 	case "1":
-		fmt.Println("case 2")
 		SendMessage(reader, config)
 	case "2":
-		fmt.Println("case 3")
 		client.Stop()
 		fmt.Println("Goodbye!")
 		return true
@@ -71,30 +66,39 @@ func HandleInput(input string, reader *bufio.Reader, config implementation.Clien
 	return false
 }
 
-func ViewClients() {
+func ViewClients() []string {
 	fmt.Println("Here are the available Clients To message")
-	fmt.Println(client.ViewClients())
+	return client.ViewClients()
 }
 
 func SendMessage(reader *bufio.Reader, config implementation.ClientConfig) {
-	ViewClients()
-	fmt.Println("which client would you like to message")
-	dest := GetInput(reader)
-	fmt.Print("Compose you message \n🚀")
+	clients := ViewClients()
+	PrintIndexAndValue(clients)
+	fmt.Println("Enter the number of the client youd like to message")
+	index, _ := strconv.Atoi(GetInput(reader))
+	dest := clients[index-1]
+	fmt.Print("Compose you message \n")
 	mess := GetInput(reader)
 	message := implementation.MessageStruct{config.ClientID, dest, mess, time.Now()}
 	res, err := client.SendMessage(message)
-	util.CheckErr(err, "Error Sending Message")
-	MesMap[dest] = append(MesMap[dest], res)
-
+	if err != nil {
+		fmt.Println("Invalid user id, please try again")
+	} else {
+		MesMap[dest] = append(MesMap[dest], res)
+	}
 }
 
 func ViewMessages(reader *bufio.Reader) {
-	fmt.Println("Which user's Messages would you like to see?")
-	for k, _ := range MesMap {
-		fmt.Println(k)
+	fmt.Println("Enter the number of the client whose messages you like to see?")
+	keys := make([]string, len(MesMap))
+	i := 0
+	for k := range MesMap {
+		keys[i] = k
+		i++
 	}
-	user := GetInput(reader)
+	PrintIndexAndValue(keys)
+	index, _ := strconv.Atoi(GetInput(reader))
+	user := keys[index-1]
 	if _, ok := MesMap[user]; ok {
 		for _, v := range MesMap[user] {
 			fmt.Printf("%s: %s\n", v.SourceId, v.Data)
@@ -110,6 +114,7 @@ func CheckForMessages(mchan chan implementation.MessageStruct) {
 		fmt.Printf("\n New Messages From User %s 🚀\n", m.SourceId)
 		MesMap[m.SourceId] = append(MesMap[m.SourceId], m)
 		OrderMessages(m.SourceId)
+		fmt.Print("🚀 ->")
 	}
 }
 
@@ -144,6 +149,13 @@ func DisplayActions(start int, stop int) {
 }
 
 func GetInput(reader *bufio.Reader) string {
+	fmt.Print("🚀 ->")
 	in, _ := reader.ReadString('\n')
 	return strings.TrimSpace(in)
+}
+
+func PrintIndexAndValue(arr []string) {
+	for i, v := range arr {
+		fmt.Printf("%d: %s\n", i+1, v)
+	}
 }

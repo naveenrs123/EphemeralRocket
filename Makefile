@@ -1,6 +1,6 @@
 .PHONY: client server1 server2 server3 coord clean all
 
-all: server1 server2 server3 coord client
+all: server1 server2 server3 coord client 
 
 server1:
 	go build -o bin/server1 ./cmd/server

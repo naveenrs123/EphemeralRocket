@@ -10,7 +10,7 @@ export SERVER_CONFIG=config/server_config2.json
 bin/server2 &
 sleep 2
 export SERVER_CONFIG=config/server_config3.json
-bin/server3 && fg
+bin/server3 &
 
 
 

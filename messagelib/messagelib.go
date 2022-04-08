@@ -6,6 +6,7 @@ import (
 	"ephemeralrocket/util"
 	"fmt"
 	"io"
+
 	//"io/ioutil"
 	"net"
 	"net/rpc"
@@ -96,6 +97,7 @@ Sends a message to a destination client. This call is blocking until the RPC cal
 Echos the message sent back, with a timestamp
 **/
 func (m *MessageLib) SendMessage(message implementation.MessageStruct) (implementation.MessageStruct, error) {
+	fmt.Printf("SERVER LOG: clientID: %s\n", message.DestinationId)
 	if !m.isClientValid(message.DestinationId, false) {
 		return implementation.MessageStruct{}, fmt.Errorf("invalid client")
 	}
@@ -105,7 +107,7 @@ func (m *MessageLib) SendMessage(message implementation.MessageStruct) (implemen
 		}
 		message.Timestamp = time.Now()
 
-		err := m.serverClient.Call("ServerRPC.SendMessage", &message, &message)
+		err := m.serverClient.Call("ServerRPC.ReceiveSenderMessage", &message, &message)
 		if err != nil {
 			m.GetPrimaryServer()
 			continue

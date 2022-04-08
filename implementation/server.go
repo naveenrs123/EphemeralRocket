@@ -34,6 +34,11 @@ type ServerRPC struct {
 	secondaryClients []string
 	block            chan bool
 	cachedMessages   map[string][]MessageStruct // maps clientId -> list of messages
+
+	primaryClientMessages   map[string][]MessageStruct // primary clients' messages
+	secondaryClientMessages map[string][]MessageStruct // secondary clients' messages
+	routedNextMessages      map[string][]MessageStruct // un-acked that need to be routed to the next server
+	routedPrevMessages      map[string][]MessageStruct // un-acked that need to be routed to the prev server
 }
 
 type Server struct {
@@ -136,13 +141,17 @@ func (sRPC *ServerRPC) ConnectRing(req *ConnectRingReq, res *interface{}) error 
 	sRPC.nextServerId = req.NextServerId
 	sRPC.prevServerId = req.PrevServerId
 
-	// res = sRPC.serverId
 	return nil
 }
 
 // AssignRole
 // Coord calls this, assigning the server a role as either a primary or secondary.
-func (sRPC *ServerRPC) AssignRole(req *AssignRoleReq, res *AssignRoleRes) error {
+func (sRPC *ServerRPC) AssignRole(req *AssignRoleReq, res *interface{}) error {
+	AssignRoleHelper(req, sRPC)
+	return nil
+}
+
+func AssignRoleHelper(req *AssignRoleReq, sRPC *ServerRPC) error {
 	if req.Role == ServerRole(1) { // primary server
 		sRPC.primaryClients = append(sRPC.primaryClients, req.ClientId)
 		sRPC.secondaryClients = util.RemoveElement(sRPC.secondaryClients, req.ClientId)
@@ -153,7 +162,6 @@ func (sRPC *ServerRPC) AssignRole(req *AssignRoleReq, res *AssignRoleRes) error 
 		sRPC.primaryClients = util.RemoveElement(sRPC.primaryClients, req.ClientId)
 		sRPC.secondaryClients = util.RemoveElement(sRPC.secondaryClients, req.ClientId)
 	}
-	res.ServerId = sRPC.serverId
 	return nil
 }
 
@@ -193,7 +201,7 @@ func (sRPC *ServerRPC) ReceiveSenderMessage(req *MessageStruct, res *MessageStru
 // Server calls this, forwarding the message to the next server in the chain. Cache the message
 // if it cannot be forwarded, so that it can be forwarded once the server failures are handled.
 func (sRPC *ServerRPC) ForwardMessage(req *ForwardMessageReq, res *ForwardMessageRes) error {
-	fmt.Printf("SERVER%d LOG: Received a forwarded message from client '%s' to client '%s'\n",sRPC.serverId, req.Message.SourceId, req.Message.DestinationId)
+	fmt.Printf("SERVER%d LOG: Received a forwarded message from client '%s' to client '%s'\n", sRPC.serverId, req.Message.SourceId, req.Message.DestinationId)
 	msg := req.Message
 	if util.FindElement(sRPC.primaryClients, msg.DestinationId) { // this server is the primary server for the destination client
 		fmt.Printf("SERVER%d LOG: this is the primary server for client %s", sRPC.serverId, req.Message.SourceId)
@@ -219,7 +227,7 @@ func (sRPC *ServerRPC) ForwardMessage(req *ForwardMessageReq, res *ForwardMessag
 			// handle error, cache message as unacked
 		}
 		client.Close()
-		fmt.Printf("SERVER%d LOG: Message from client: %s to client %s forwarded to server with id %d\n",sRPC.serverId, req.Message.SourceId, req.Message.DestinationId, serverId)
+		fmt.Printf("SERVER%d LOG: Message from client: %s to client %s forwarded to server with id %d\n", sRPC.serverId, req.Message.SourceId, req.Message.DestinationId, serverId)
 		res.ServerId = sRPC.serverId
 		res.Message = msg
 		return nil
@@ -265,40 +273,118 @@ func (sRPC *ServerRPC) RetrieveMessages(req *RetrieveMessageReq, res *RetrieveMe
 // Server must then retrieve cached data from one of its secondaries for the clients in ClientIds
 //}
 
+// type HandleFailureReq struct {
+// 	PrevServerId   uint8
+// 	PrevServerAddr string
+// 	NextServerId   uint8
+// 	NextServerAddr string
+// 	ClientIds      []string
+// 	// Server needs to be aware of new clients that now see this server as their primary.
+// 	// List of client IDs. When HandleFailure is called, the server may now become a primary
+// 	// for some new clients.
+
+// 	// Server must then retrieve cached data from one of its secondaries for the clients in ClientIds
+// }
+
 func (sRPC *ServerRPC) HandleFailure(req *HandleFailureReq, res *interface{}) error {
 	// TODO: Recalibrate prev and next servers, add the clients that now have this server as its primary server.
 	// TODO: think about what happens to potentially lost messages
+
+	newNext := req.NextServerAddr
+	newPrev := req.PrevServerAddr
+	// s1 -> s2 -> s3
+
+	// Handles case when server becomes primary for clients
+	for _, id := range req.PrimaryClientIds {
+		// assign this server a new role in the role lists
+		assignReq := AssignRoleReq{id, ServerRole(1)}
+		AssignRoleHelper(&assignReq, sRPC)
+
+		// messages are guaranteed to be on this server because we know it had to have been a secondary for this client before
+		// so just grab them from secondary list and put them in primary list
+		sRPC.primaryClientMessages[id] = sRPC.secondaryClientMessages[id]
+		delete(sRPC.secondaryClientMessages, id)
+	}
+
+	// s1
+	if sRPC.nextServerAddr != newNext && newNext != "" {
+		client, err := rpc.Dial("tcp", newNext)
+		util.CheckErr(err, "Failed to connect to new next server.")
+
+		// We are sent a non-empty list of new secondary clients. This means s3 is the primary and this is a new secondary
+		if len(req.SecondaryClientIds) > 0 {
+
+			req := GetCachedMessagesFromPrimaryReq{}
+			var resPrimaryClientMessages GetCachedMessagesFromPrimaryRes
+			err = client.Call("ServerRPC.GetCachedMessagesFromPrimary", &req, &resPrimaryClientMessages)
+
+			// get all the primary client messages from the primary server and make this server store them in secondaryClientMessages
+			for clientId := range resPrimaryClientMessages.messages {
+
+				assignReq := AssignRoleReq{clientId, ServerRole(2)}
+				AssignRoleHelper(&assignReq, sRPC)
+
+				sRPC.secondaryClientMessages[clientId] = resPrimaryClientMessages.messages[clientId]
+			}
+		}
+
+		client.Close()
+	}
+
+	// if a new prev server address is sent, update this server's prev address
+	// s3
+	if newPrev != sRPC.prevServerAddr && newPrev != "" {
+		client, err := rpc.Dial("tcp", newPrev)
+		util.CheckErr(err, "Failed to connect to new next server.")
+
+		// We are sent a non-empty list of new secondary clients. This means s1 is the primary and this is a new secondary
+		if len(req.SecondaryClientIds) > 0 {
+
+			req := GetCachedMessagesFromPrimaryReq{}
+			var resPrimaryClientMessages GetCachedMessagesFromPrimaryRes
+			err = client.Call("ServerRPC.GetCachedMessagesFromPrimary", &req, &resPrimaryClientMessages)
+
+			// get all the primary client messages from the primary server and make this server store them in secondaryClientMessages
+			for clientId := range resPrimaryClientMessages.messages {
+
+				assignReq := AssignRoleReq{clientId, ServerRole(2)}
+				AssignRoleHelper(&assignReq, sRPC)
+
+				sRPC.secondaryClientMessages[clientId] = resPrimaryClientMessages.messages[clientId]
+			}
+
+		}
+		client.Close()
+	}
+
+	sRPC.nextServerAddr = newNext
+	sRPC.prevServerAddr = newPrev
+	sRPC.nextServerId = req.NextServerId
+	sRPC.prevServerId = req.PrevServerId
+
 	return nil
 }
 
-// RetrieveCachedMessages
-// Server calls this when it is a new primary and needs to retrieve cached messages from one of its secondaries.
-
-// func (sRPC *ServerRPC) RetrieveCachedMessages(req *RetrieveCachedMessagesReq, res *RetrieveCachedMessagesRes) error {
-// 	// TODO: discuss as group. Do we need this? Unless there's information asymmetry between secondaries at any point, we don't need this.
-
-// }
-
 // SendCachedMessages
-// Server calls this when it is an existing primary and needs to send cached messages to a new secondary.
-
-func (sRPC *ServerRPC) SendCachedMessages(req *SendCachedMessagesReq, res *interface{}) error {
-
-	cachedMessages := SendCachedMessagesReq{sRPC.cachedMessages}
-
-	s1, err := rpc.Dial("tcp", sRPC.nextServerAddr) // secondary 1
-	util.CheckErr(err, "Failed to dial s1.")
-	err = s1.Call("RecvCachedMessagesFromPrimary", cachedMessages, nil)
-	util.CheckErr(err, "Failed to send cached messages to s1.")
-	s1.Close()
-
-	s2, err := rpc.Dial("tcp", sRPC.prevServerAddr) // secondary 2
-	util.CheckErr(err, "Failed to dial s2.")
-	err = s2.Call("RecvCachedMessagesFromPrimary", cachedMessages, nil)
-	util.CheckErr(err, "Failed to send cached messages to s2.")
-	s2.Close()
-
+// Secondary server calls this on a primary send cached messages.
+func (sRPC *ServerRPC) GetCachedMessagesFromPrimary(req *GetCachedMessagesFromPrimaryReq, res *GetCachedMessagesFromPrimaryRes) error {
+	// for argument maybe we need a direction and clientIds? For every clientId, send the cached messages over to the new secondary
+	res.messages = sRPC.primaryClientMessages
 	return nil
+
+	// s1, err := rpc.Dial("tcp", sRPC.nextServerAddr) // secondary 1
+	// util.CheckErr(err, "Failed to dial s1.")
+	// err = s1.Call("RecvCachedMessagesFromPrimary", cachedMessages, nil)
+	// util.CheckErr(err, "Failed to send cached messages to s1.")
+	// s1.Close()
+
+	// s2, err := rpc.Dial("tcp", sRPC.prevServerAddr) // secondary 2
+	// util.CheckErr(err, "Failed to dial s2.")
+	// err = s2.Call("RecvCachedMessagesFromPrimary", cachedMessages, nil)
+	// util.CheckErr(err, "Failed to send cached messages to s2.")
+	// s2.Close()
+
+	// return nil
 
 }
 

@@ -124,10 +124,12 @@ func (c *CoordRPC) RetrievePrimaryServer(req *PrimaryServerReq, res *PrimaryServ
 
 	// Add client to system
 	if !util.FindElement(c.ClientList, req.ClientId) {
+		fmt.Printf("COORD LOG: New Client: %s\n", req.ClientId)
 		c.ClientList = append(c.ClientList, req.ClientId)
 	}
 
 	if v, ok := c.PrimaryClientMap[req.ClientId]; ok {
+		fmt.Printf("COORD LOG: Existing Client: %s\n", req.ClientId)
 		// If a primary has been assigned, retrieve it.
 		res.PrimaryServerIPPort = c.ServerDetailsMap[v].ClientAddr
 	} else {
@@ -161,16 +163,19 @@ func (c *CoordRPC) RetrievePrimaryServer(req *PrimaryServerReq, res *PrimaryServ
 		fmt.Printf("COORD LOG: Primary for %s is %d\n", req.ClientId, primaryServer.ServerId)
 		fmt.Printf("COORD LOG: Secondary 1 for %s is %d\n", req.ClientId, prevServer.ServerId)
 		fmt.Printf("COORD LOG: Secondary 2 for %s is %d\n", req.ClientId, nextServer.ServerId)
+		primaryClient.Close()
+		prevClient.Close()
+		nextClient.Close()
 	}
 
 	res.ChainReady = true
-	go MonitorServerFailures(c)
 	return nil
 }
 
 // Client calls this through MessageLib, requesting all known clients in the system. Coord returns
 // the list of client IDs representing the clients that are known to the system.
 func (c *CoordRPC) RetrieveClients(req *interface{}, res *RetrieveClientsRes) error {
+	fmt.Printf("COORD LOG: RetrieveClients\n")
 	res.ClientIds = c.ClientList
 	return nil
 }
@@ -179,15 +184,15 @@ func (c *CoordRPC) RetrieveClients(req *interface{}, res *RetrieveClientsRes) er
 func CreateServerRing(c *CoordRPC) {
 	length := len(c.ServerDetailsMap)
 	serverOrder := make([]uint8, length)
-	serverNextOrder := make([]uint8, length)
 	serverPrevOrder := make([]uint8, length)
+	serverNextOrder := make([]uint8, length)
 
 	counter := 1
 	for k := range c.ServerDetailsMap {
 		// use modulo to assign each server to the right position in the prev and next order.
-		serverPrevOrder[(counter-1)%length] = k
+		serverPrevOrder[(counter+1)%length] = k
 		serverOrder[counter%length] = k
-		serverNextOrder[(counter+1)%length] = k
+		serverNextOrder[(counter-1)%length] = k
 		counter++
 	}
 
@@ -222,7 +227,12 @@ func CreateServerRing(c *CoordRPC) {
 		util.CheckErr(serverCalls[i].Error, "Error during call to ServerRPC.ConnectRing for server")
 		<-doneChan
 	}
+	fmt.Printf("COORD LOG: Server prev order: %v\n", serverPrevOrder)
+	fmt.Printf("COORD LOG: Server ring order: %v\n", serverOrder)
+	fmt.Printf("COORD LOG: Server next order: %v\n", serverNextOrder)
+
 	c.IsRingReady = true
+	go MonitorServerFailures(c)
 	fmt.Println("COORD LOG: All servers joined")
 }
 
@@ -247,6 +257,7 @@ func AssignPrimaryServer(c *CoordRPC) uint8 {
 func MonitorServerFailures(c *CoordRPC) {
 	laddrList := make([]string, c.NumServers)
 	raddrList := make([]string, c.NumServers)
+	serverIds := make([]uint8, c.NumServers)
 
 	// Extract local addresses for fcheck
 	coordIP := util.ExtractIP(c.FCheckIP)
@@ -264,6 +275,7 @@ func MonitorServerFailures(c *CoordRPC) {
 	// extract remote addresses for fcheck
 	i := 0
 	for _, v := range c.ServerDetailsMap {
+		serverIds[i] = v.ServerId
 		raddrList[i] = v.FCheckAddr
 		i++
 	}
@@ -275,6 +287,7 @@ func MonitorServerFailures(c *CoordRPC) {
 		HBeatLocalIPPortList:   laddrList,
 		HBeatRemoteIPPortList:  raddrList,
 		LostMsgThresh:          c.LostMsgsThresh,
+		ServerIds:              serverIds,
 	})
 	util.CheckErr(err, "fcheck error: %v", err)
 
@@ -282,7 +295,7 @@ func MonitorServerFailures(c *CoordRPC) {
 		select {
 		case f := <-notifyCh:
 			c.IsRingReady = false
-			fmt.Printf("COORD LOG: Server %d failure detected @ %v\n", f.ServerID, f.Timestamp)
+			fmt.Printf("COORD LOG: Server%d failed @ %v\n", f.ServerID, f.Timestamp)
 
 			failing := c.ServerDetailsMap[f.ServerID]
 			prev := c.ServerDetailsMap[failing.PrevId]
@@ -291,6 +304,8 @@ func MonitorServerFailures(c *CoordRPC) {
 			prevClient, _ := rpc.Dial("tcp", prev.CoordAddr)
 			nextClient, _ := rpc.Dial("tcp", next.CoordAddr)
 
+			var res interface{}
+			fmt.Printf("COORD LOG: Primary clients for failing server: %v\n", failing.PrimaryClients)
 			prevPrim, nextPrim := partitionPrimaryClients(c, failing.PrimaryClients, failing.PrevId, failing.NextId)
 			prevSec, nextSec := partitionSecondaryClients(c, failing.SecondaryClients, failing.PrevId)
 
@@ -312,17 +327,24 @@ func MonitorServerFailures(c *CoordRPC) {
 				SecondaryClientIds: nextSec,
 			}
 
-			var res interface{}
-
 			if len(failing.PrimaryClients) > 0 {
-				// CASE: failing server is a primary for more than one client
+				// CASE: failing server is a primary for at least one client
+				fmt.Printf("COORD LOG: Primary - Server%d failed\n", failing.ServerId)
 
 				// Pick a new secondary based on the assigned primary.
 				isPrevPrimary := len(prevPrim) > 0
+				//var newPrim *ServerDetails
 				var newSec *ServerDetails
+				var primClients []string
 				if isPrevPrimary {
+					//newPrim = prev
+					prev.PrimaryClients = append(prev.PrimaryClients, prevPrim...)
+					primClients = prevPrim
 					newSec = c.ServerDetailsMap[prev.PrevId]
 				} else {
+					//newPrim = next
+					next.PrimaryClients = append(prev.PrimaryClients, nextPrim...)
+					primClients = nextPrim
 					newSec = c.ServerDetailsMap[next.NextId]
 				}
 
@@ -339,28 +361,51 @@ func MonitorServerFailures(c *CoordRPC) {
 
 				newSecClient, _ := rpc.Dial("tcp", newSec.CoordAddr)
 
+				//newSecSec, _ := partitionSecondaryClients(c, primClients, newPrim.ServerId)
 				newSecReq := HandleFailureReq{
-					PrevServerId:   newSec.PrevId,
-					PrevServerAddr: c.ServerDetailsMap[newSec.PrevId].ServerAddr,
-					NextServerId:   newSec.NextId,
-					NextServerAddr: c.ServerDetailsMap[newSec.NextId].ServerAddr,
+					PrevServerId:       newSec.PrevId,
+					PrevServerAddr:     c.ServerDetailsMap[newSec.PrevId].ServerAddr,
+					NextServerId:       newSec.NextId,
+					NextServerAddr:     c.ServerDetailsMap[newSec.NextId].ServerAddr,
+					SecondaryClientIds: primClients,
 				}
 
-				err := newSecClient.Call("ServerRPC.HandleFailure", newSecReq, &res)
+				if isPrevPrimary {
+					err := prevClient.Call("ServerRPC.HandleFailure", prevReq, &res)
+					util.CheckErr(err, "Error handling failure for prev server, Server ID: %d", prev.ServerId)
+					prevClient.Close()
+
+					err = nextClient.Call("ServerRPC.HandleFailure", nextReq, &res)
+					util.CheckErr(err, "Error handling failure for next server, Server ID: %d", next.ServerId)
+					nextClient.Close()
+				} else {
+					err := nextClient.Call("ServerRPC.HandleFailure", nextReq, &res)
+					util.CheckErr(err, "Error handling failure for next server, Server ID: %d", next.ServerId)
+					nextClient.Close()
+
+					err = prevClient.Call("ServerRPC.HandleFailure", prevReq, &res)
+					util.CheckErr(err, "Error handling failure for prev server, Server ID: %d", prev.ServerId)
+					prevClient.Close()
+				}
+
+				err = newSecClient.Call("ServerRPC.HandleFailure", newSecReq, &res)
 				util.CheckErr(err, "Error handling failure for new secondary server, Server ID: %d", newSec.ServerId)
+				newSecClient.Close()
+			} else {
+				err := prevClient.Call("ServerRPC.HandleFailure", prevReq, &res)
+				util.CheckErr(err, "Error handling failure for prev server, Server ID: %d", prev.ServerId)
+				prevClient.Close()
+
+				err = nextClient.Call("ServerRPC.HandleFailure", nextReq, &res)
+				util.CheckErr(err, "Error handling failure for next server, Server ID: %d", next.ServerId)
+				nextClient.Close()
 			}
-
-			err := prevClient.Call("ServerRPC.HandleFailure", prevReq, &res)
-			util.CheckErr(err, "Error handling failure for prev server, Server ID: %d", prev.ServerId)
-
-			err = nextClient.Call("ServerRPC.HandleFailure", nextReq, &res)
-			util.CheckErr(err, "Error handling failure for next server, Server ID: %d", next.ServerId)
 
 			// Reconfigure ring and remove failing server from the map.
 			prev.NextId, next.PrevId = next.ServerId, prev.ServerId
 			delete(c.ServerDetailsMap, failing.ServerId)
 			c.IsRingReady = true
-
+			fmt.Printf("COORD LOG: Server%d failure handled\n", f.ServerID)
 		default:
 			time.Sleep(50 * time.Millisecond)
 		}
@@ -368,19 +413,25 @@ func MonitorServerFailures(c *CoordRPC) {
 }
 
 func partitionPrimaryClients(c *CoordRPC, clients []string, prevId uint8, nextId uint8) ([]string, []string) {
-	prev := make([]string, 0)
-	next := make([]string, 0)
+	var prev []string
+	var next []string
 
 	// Determine a new primary based on load.
 	prevLoad := calculateLoad(c, prevId)
 	nextLoad := calculateLoad(c, nextId)
 
 	if prevLoad < nextLoad {
+		prev = make([]string, len(clients))
+		next = make([]string, 0)
 		copy(prev, clients)
 	} else {
+		next = make([]string, len(clients))
+		prev = make([]string, 0)
 		copy(next, clients)
 	}
 
+	fmt.Printf("COORD LOG: Primary Clients for Prev: Server%d, %v\n", prevId, prev)
+	fmt.Printf("COORD LOG: Primary Clients for Next: Server%d, %v\n", nextId, next)
 	return prev, next
 }
 

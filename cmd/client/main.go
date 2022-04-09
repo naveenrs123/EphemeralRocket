@@ -15,7 +15,7 @@ import (
 
 var actions []string = []string{"View Messages",
 	// "Start a new converstaion",
-	"Send Message", "quit"}
+	"Send Message", "Quit"}
 
 var MesMap map[string][]implementation.MessageStruct
 
@@ -74,13 +74,13 @@ func SendMessage(reader *bufio.Reader, config implementation.ClientConfig) {
 		clients := ViewClients()
 		PrintIndexAndValue(clients)
 		fmt.Println("Enter the number of the client you'd like to message")
-		index, _ := strconv.Atoi(GetInput(reader))
-		if index-1 > len(clients)-1 {
+		index, err := strconv.Atoi(GetInput(reader))
+		if (index-1 > len(clients)-1) || err != nil {
 			fmt.Println("Invalid client id, please try again")
 			continue
 		}
 		dest := clients[index-1]
-		fmt.Print("Compose you message \n")
+		fmt.Print("Compose your message \n")
 		mess := GetInput(reader)
 		message := implementation.MessageStruct{SourceId: config.ClientID, DestinationId: dest, Data: mess}
 		res, err := client.SendMessage(message)

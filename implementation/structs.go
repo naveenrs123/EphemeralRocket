@@ -100,7 +100,7 @@ type GetCachedMessagesFromPrimaryReq struct {
 }
 
 type GetCachedMessagesFromPrimaryRes struct {
-	messages map[string][]MessageStruct
+	Messages map[string][]MessageStruct
 }
 
 type SendCachedMessagesReq struct {

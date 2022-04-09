@@ -19,6 +19,8 @@
 - Secondary server failure
 - Primary server failure
 
+**Deliverable Document:** https://docs.google.com/document/d/16D2wXyIFppbUduuzm3SqeSSR7pUyTThJGggFyxPu6Zg/edit?usp=sharing
+
 ## Milestone 3
 **Finishing Failure Handling + Debugging/Testing**
 - Routing server failure

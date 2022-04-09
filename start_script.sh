@@ -16,7 +16,7 @@ export SERVER_CONFIG=config/server_config4.json
 bin/server4 &
 sleep 2
 export SERVER_CONFIG=config/server_config5.json
-bin/server5 &
+bin/server5
 
 
 

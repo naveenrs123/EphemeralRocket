@@ -118,3 +118,17 @@ func FindIndex(str []string, x string) int {
 	}
 	return -1
 }
+
+func IsConnectionAlive(addr string) bool {
+	raddr, rerr := net.ResolveTCPAddr("tcp", addr)
+	if rerr != nil {
+		return false
+	}
+
+	conn, err := net.DialTCP("tcp", nil, raddr)
+	if err == nil {
+		conn.Close()
+	}
+
+	return err == nil
+}

@@ -91,9 +91,15 @@ func (m *MessageLib) SendMessage(message implementation.MessageStruct) (implemen
 			continue
 		}
 		message.Timestamp = time.Now()
-
+		
+		if !util.IsConnectionAlive(m.primaryServerIPPort) {
+			m.serverClient.Close()
+			m.GetPrimaryServer()
+			continue
+		}
 		err := m.serverClient.Call("ServerRPC.ReceiveSenderMessage", &message, &message)
 		if err != nil {
+			m.serverClient.Close()
 			m.GetPrimaryServer()
 			continue
 		}
@@ -113,8 +119,14 @@ func (m *MessageLib) RetrieveMessages() []implementation.MessageStruct {
 			continue
 		}
 		req := implementation.RetrieveMessageReq{ClientId: m.clientId}
+		if !util.IsConnectionAlive(m.primaryServerIPPort) {
+			m.serverClient.Close()
+			m.GetPrimaryServer()
+			continue
+		}
 		err := m.serverClient.Call("ServerRPC.RetrieveMessages", &req, &res)
 		if err != nil {
+			m.serverClient.Close()
 			m.GetPrimaryServer()
 			continue
 		}
@@ -134,7 +146,7 @@ func (m *MessageLib) Stop() {
 func (m *MessageLib) PollForMessages() {
 outer:
 	for {
-		time.Sleep(time.Second * 1)
+		time.Sleep(time.Second * 5)
 		select {
 		case <-m.quitChan:
 			break outer
@@ -145,8 +157,15 @@ outer:
 				continue
 			}
 			req := implementation.RetrieveMessageReq{ClientId: m.clientId}
+			if !util.IsConnectionAlive(m.primaryServerIPPort) {
+				m.serverClient.Close()
+				m.GetPrimaryServer()
+				continue
+			}
 			err := m.serverClient.Call("ServerRPC.RetrieveMessages", &req, &res)
 			if err != nil {
+				fmt.Printf("Error encountered when retrieving messages %e", err)
+				m.serverClient.Close()
 				m.GetPrimaryServer()
 				continue
 			}

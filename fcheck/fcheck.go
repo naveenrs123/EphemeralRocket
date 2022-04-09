@@ -74,7 +74,7 @@ func Start(arg StartStruct) (notifyCh <-chan FailureDetected, err error) {
 		monitorCount = len(arg.HBeatRemoteIPPortList)
 		notify := make(chan FailureDetected)
 		stopMonitor = make(chan bool, monitorCount)
-
+		fmt.Println("FCHECK: MONITORING SERVERS")
 		for idx, monitorConn := range monitorConnList {
 			go monitor(monitorConn, notify, stopMonitor, &arg, idx)
 		}
@@ -185,6 +185,11 @@ func monitor(conn *net.UDPConn, notifyCh chan<- FailureDetected, stopCh <-chan b
 			if err != nil {
 				lost++
 				if lost > arg.LostMsgThresh {
+					fmt.Println(FailureDetected{
+						UDPIpPort: arg.HBeatRemoteIPPortList[addrIdx],
+						ServerID:  arg.ServerIds[addrIdx],
+						Timestamp: time.Now(),
+					})
 					notifyCh <- FailureDetected{
 						UDPIpPort: arg.HBeatRemoteIPPortList[addrIdx],
 						ServerID:  arg.ServerIds[addrIdx],

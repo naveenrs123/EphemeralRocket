@@ -2,5 +2,5 @@
     "ClientListenAddr": "thetis.students.cs.ubc.ca:52069",
     "ServerListenAddr": "thetis.students.cs.ubc.ca:52690",
     "LostMsgsThresh": 3,
-    "NumServers": 3
+    "NumServers": 5
   }

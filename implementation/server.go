@@ -33,6 +33,7 @@ type ServerRPC struct {
 	primaryClients   []string
 	secondaryClients []string
 	block            chan bool
+	// runOnce          bool
 
 	primaryClientMessages   map[string][]MessageStruct // primary clients' messages
 	secondaryClientMessages map[string][]MessageStruct // secondary clients' messages
@@ -109,6 +110,7 @@ func (s *Server) Start(config ServerConfig) error {
 	coordAddrTCP, err := net.ResolveTCPAddr("tcp", s.sRPC.coordAddr)
 	util.CheckErr(err, "error resolving address %s", s.sRPC.coordAddr)
 	conn, err := net.DialTCP("tcp", serverAddrTCP, coordAddrTCP)
+	conn.SetLinger(0)
 	util.CheckErr(err, "Server at %s failed to connect to coord node", s.sRPC.serverAddr)
 	coordRpc := rpc.NewClient(conn)
 
@@ -124,6 +126,7 @@ func (s *Server) Start(config ServerConfig) error {
 	var serverJoinRes interface{}
 	err = coordRpc.Call("CoordRPC.ServerJoin", serverJoinReq, &serverJoinRes)
 	util.CheckErr(err, "Unable to call ServerJoin to coord from %s id %d", s.sRPC.serverAddr, s.sRPC.serverId)
+	coordRpc.Close()
 
 	// Block forever using empty channel
 	<-s.sRPC.block
@@ -204,7 +207,7 @@ func (sRPC *ServerRPC) ForwardMessage(req *ForwardMessageReq, res *ForwardMessag
 	fmt.Printf("SERVER%d LOG: Received a forwarded message from client '%s' to client '%s'\n", sRPC.serverId, req.Message.SourceId, req.Message.DestinationId)
 	msg := req.Message
 	if util.FindElement(sRPC.primaryClients, msg.DestinationId) { // this server is the primary server for the destination client
-		fmt.Printf("SERVER%d LOG: this is the primary server for client %s\n", sRPC.serverId, req.Message.SourceId)
+		fmt.Printf("SERVER%d LOG: this is the primary server for client %s\n", sRPC.serverId, req.Message.DestinationId)
 		// cache messages
 		currMessages := sRPC.primaryClientMessages[msg.DestinationId]
 		currMessages = append(currMessages, msg)
@@ -240,6 +243,14 @@ func (sRPC *ServerRPC) ForwardMessage(req *ForwardMessageReq, res *ForwardMessag
 // Client calls this through MessageLib on its primary server. Retrieves all unread messages for the client. Returns a
 // slice of MessageStructs. Also, after retrieval, the cached messages are deleted from the primary and secondary servers
 func (sRPC *ServerRPC) RetrieveMessages(req *RetrieveMessageReq, res *RetrieveMessageRes) error {
+	//fmt.Printf("SERVER%d LOG: Client: %s retrieved messages from its primary server\n", sRPC.serverId, req.ClientId)
+
+	// sRPC.runOnce = true
+	// if sRPC.runOnce {
+	// 	fmt.Printf("SERVER%d LOG:\n", sRPC.serverId)
+	// 	sRPC.runOnce = false
+	// }
+
 	if messages, ok := sRPC.primaryClientMessages[req.ClientId]; ok {
 		delete(sRPC.primaryClientMessages, req.ClientId)
 		//if messages were deleted, clear cache in secondary servers
@@ -256,29 +267,24 @@ func (sRPC *ServerRPC) RetrieveMessages(req *RetrieveMessageReq, res *RetrieveMe
 	return nil
 }
 
+func (sRPC *ServerRPC) printForServer(s string) {
+	fmt.Printf("SERVER%d LOG: %s\n", sRPC.serverId, s)
+
+}
+
 // HandleFailure
 // Coord calls this, informing the server about what its new role and adjacent servers are. The server
 // may need to forward any unacknowledged messages once the chain is reconfigured.
-
 // Server must then retrieve cached data from one of its secondaries for the clients in ClientIds
-//}
-
-// type HandleFailureReq struct {
-// 	PrevServerId   uint8
-// 	PrevServerAddr string
-// 	NextServerId   uint8
-// 	NextServerAddr string
-// 	ClientIds      []string
-// 	// Server needs to be aware of new clients that now see this server as their primary.
-// 	// List of client IDs. When HandleFailure is called, the server may now become a primary
-// 	// for some new clients.
-
-// 	// Server must then retrieve cached data from one of its secondaries for the clients in ClientIds
-// }
-
 func (sRPC *ServerRPC) HandleFailure(req *HandleFailureReq, res *interface{}) error {
-	// TODO: Recalibrate prev and next servers, add the clients that now have this server as its primary server.
-	// TODO: think about what happens to potentially lost messages
+
+	// PrevServerId       uint8
+	// PrevServerAddr     string
+	// NextServerId       uint8
+	// NextServerAddr     string
+	// PrimaryClientIds   []string
+	// SecondaryClientIds []string
+
 
 	newNext := req.NextServerAddr
 	newPrev := req.PrevServerAddr
@@ -308,13 +314,17 @@ func (sRPC *ServerRPC) HandleFailure(req *HandleFailureReq, res *interface{}) er
 			var resPrimaryClientMessages GetCachedMessagesFromPrimaryRes
 			err = client.Call("ServerRPC.GetCachedMessagesFromPrimary", &req, &resPrimaryClientMessages)
 
+			if err != nil {
+				fmt.Printf("Error encountered getting cached messages from primary %e\n", err)
+			}
+
 			// get all the primary client messages from the primary server and make this server store them in secondaryClientMessages
-			for clientId := range resPrimaryClientMessages.messages {
+			for clientId := range resPrimaryClientMessages.Messages {
 
 				assignReq := AssignRoleReq{clientId, ServerRole(2)}
 				AssignRoleHelper(&assignReq, sRPC)
 
-				sRPC.secondaryClientMessages[clientId] = resPrimaryClientMessages.messages[clientId]
+				sRPC.secondaryClientMessages[clientId] = resPrimaryClientMessages.Messages[clientId]
 			}
 		}
 
@@ -334,13 +344,17 @@ func (sRPC *ServerRPC) HandleFailure(req *HandleFailureReq, res *interface{}) er
 			var resPrimaryClientMessages GetCachedMessagesFromPrimaryRes
 			err = client.Call("ServerRPC.GetCachedMessagesFromPrimary", &req, &resPrimaryClientMessages)
 
+			if err != nil {
+				fmt.Printf("Error encountered getting cached messages from primary %e\n", err)
+			}
+
 			// get all the primary client messages from the primary server and make this server store them in secondaryClientMessages
-			for clientId := range resPrimaryClientMessages.messages {
+			for clientId := range resPrimaryClientMessages.Messages {
 
 				assignReq := AssignRoleReq{clientId, ServerRole(2)}
 				AssignRoleHelper(&assignReq, sRPC)
 
-				sRPC.secondaryClientMessages[clientId] = resPrimaryClientMessages.messages[clientId]
+				sRPC.secondaryClientMessages[clientId] = resPrimaryClientMessages.Messages[clientId]
 			}
 
 		}
@@ -356,26 +370,10 @@ func (sRPC *ServerRPC) HandleFailure(req *HandleFailureReq, res *interface{}) er
 }
 
 // SendCachedMessages
-// Secondary server calls this on a primary send cached messages.
+// Secondary server calls this on a primary server to get its primaryClients cached messages.
 func (sRPC *ServerRPC) GetCachedMessagesFromPrimary(req *GetCachedMessagesFromPrimaryReq, res *GetCachedMessagesFromPrimaryRes) error {
-	// for argument maybe we need a direction and clientIds? For every clientId, send the cached messages over to the new secondary
-	res.messages = sRPC.primaryClientMessages
+	res.Messages = sRPC.primaryClientMessages
 	return nil
-
-	// s1, err := rpc.Dial("tcp", sRPC.nextServerAddr) // secondary 1
-	// util.CheckErr(err, "Failed to dial s1.")
-	// err = s1.Call("RecvCachedMessagesFromPrimary", cachedMessages, nil)
-	// util.CheckErr(err, "Failed to send cached messages to s1.")
-	// s1.Close()
-
-	// s2, err := rpc.Dial("tcp", sRPC.prevServerAddr) // secondary 2
-	// util.CheckErr(err, "Failed to dial s2.")
-	// err = s2.Call("RecvCachedMessagesFromPrimary", cachedMessages, nil)
-	// util.CheckErr(err, "Failed to send cached messages to s2.")
-	// s2.Close()
-
-	// return nil
-
 }
 
 // Required RPC Calls: END
@@ -396,7 +394,7 @@ func (sRPC *ServerRPC) RecvCachedMessagesFromPrimary(req *SendCachedMessagesReq,
 }
 
 func (sRPC *ServerRPC) ClearCache(req *ClearCacheReq, res *interface{}) error {
-	fmt.Printf("SERVER%d LOG: Secondary server received cache delection request from primary server for client with id '%s'\n", sRPC.serverId, req.ClientId)
+	fmt.Printf("SERVER%d LOG: Secondary server received cache deletion request from primary server for client with id '%s'\n", sRPC.serverId, req.ClientId)
 	delete(sRPC.secondaryClientMessages, req.ClientId)
 	return nil
 }

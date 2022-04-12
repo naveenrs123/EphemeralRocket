@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/rpc"
+	"os"
 	"time"
 )
 
@@ -37,8 +38,8 @@ type ServerRPC struct {
 
 	primaryClientMessages   map[string][]MessageStruct // primary clients' messages
 	secondaryClientMessages map[string][]MessageStruct // secondary clients' messages
-	routedNextMessages      map[string][]MessageStruct // un-acked that need to be routed to the next server
-	routedPrevMessages      map[string][]MessageStruct // un-acked that need to be routed to the prev server
+	routedNextMessages      []MessageStruct            // un-acked that need to be routed to the next server
+	routedPrevMessages      []MessageStruct            // un-acked that need to be routed to the prev server
 }
 
 type Server struct {
@@ -86,6 +87,8 @@ func (s *Server) Start(config ServerConfig) error {
 		block:                   make(chan bool),
 		primaryClientMessages:   make(map[string][]MessageStruct),
 		secondaryClientMessages: make(map[string][]MessageStruct),
+		routedNextMessages:      make([]MessageStruct, 0),
+		routedPrevMessages:      make([]MessageStruct, 0),
 	}
 
 	server := rpc.NewServer()
@@ -177,6 +180,9 @@ func (sRPC *ServerRPC) ReceiveSenderMessage(req *MessageStruct, res *MessageStru
 		cachedMessages := sRPC.primaryClientMessages[req.DestinationId]
 		cachedMessages = append(cachedMessages, *req)
 		sRPC.primaryClientMessages[req.DestinationId] = cachedMessages
+		msgMap := make(map[string][]MessageStruct)
+		msgMap[req.DestinationId] = append([]MessageStruct{}, *req)
+		CacheMessagesInSecondaries(sRPC, msgMap)
 		res = req
 		return nil
 	}
@@ -186,15 +192,21 @@ func (sRPC *ServerRPC) ReceiveSenderMessage(req *MessageStruct, res *MessageStru
 	conn, connerr := util.GetTCPConn(serverAddr)
 	if connerr != nil {
 		// handle error, cache message as not forwarded
+		CacheUnackedMessage(sRPC, *req, serverId)
+		return nil
 	}
 	client := rpc.NewClient(conn)
 	fwdReq := ForwardMessageReq{ServerId: sRPC.serverId, Message: *req}
 	var fwdRes ForwardMessageRes
+	fmt.Printf("SERVER%d LOG: Forwarding Message from client: %s to client: %s to server with id %d\n", sRPC.serverId, req.SourceId, req.DestinationId, serverId)
 	err := client.Call("ServerRPC.ForwardMessage", &fwdReq, &fwdRes)
 	if err != nil {
 		// handle error, cache message as not forwarded
+		fmt.Printf("SERVER%d LOG: Error Forwarding Message from client: %s to client: %s to server with id %d, caching message\n", sRPC.serverId, req.SourceId, req.DestinationId, serverId)
+		CacheUnackedMessage(sRPC, *req, serverId)
+		client.Close()
+		return nil
 	}
-	fmt.Printf("SERVER%d LOG: Message from client: %s to client %s forwarded to server with id %d\n", sRPC.serverId, req.SourceId, req.DestinationId, serverId)
 	res = req
 	client.Close()
 	return nil
@@ -204,7 +216,7 @@ func (sRPC *ServerRPC) ReceiveSenderMessage(req *MessageStruct, res *MessageStru
 // Server calls this, forwarding the message to the next server in the chain. Cache the message
 // if it cannot be forwarded, so that it can be forwarded once the server failures are handled.
 func (sRPC *ServerRPC) ForwardMessage(req *ForwardMessageReq, res *ForwardMessageRes) error {
-	fmt.Printf("SERVER%d LOG: Received a forwarded message from client '%s' to client '%s'\n", sRPC.serverId, req.Message.SourceId, req.Message.DestinationId)
+	fmt.Printf("SERVER%d LOG: Received a forwarded message from server%d, from client '%s' to client '%s'\n", sRPC.serverId, req.ServerId, req.Message.SourceId, req.Message.DestinationId)
 	msg := req.Message
 	if util.FindElement(sRPC.primaryClients, msg.DestinationId) { // this server is the primary server for the destination client
 		fmt.Printf("SERVER%d LOG: this is the primary server for client %s\n", sRPC.serverId, req.Message.DestinationId)
@@ -219,20 +231,28 @@ func (sRPC *ServerRPC) ForwardMessage(req *ForwardMessageReq, res *ForwardMessag
 		res.Message = msg
 		return nil
 	} else { // this server is NOT the primary server for the destination client
+		if sRPC.serverId == 5 {
+			fmt.Printf("SHUTTING DOWN SERVER 5\n")
+			os.Exit(1)
+		}
 		serverAddr, serverId := GetOtherServerAddrAndId(sRPC, req.ServerId)
 		conn, connerr := util.GetTCPConn(serverAddr)
 		if connerr != nil {
-			//TODO: handle error, cache message as unacked
+			CacheUnackedMessage(sRPC, req.Message, serverId)
+			return nil
 		}
 		fwdReq := ForwardMessageReq{ServerId: sRPC.serverId, Message: req.Message}
 		var fwdRes ForwardMessageRes
 		client := rpc.NewClient(conn)
+		fmt.Printf("SERVER%d LOG: Forwarding Message from client: %s to client: %s to server with id %d\n", sRPC.serverId, req.Message.SourceId, req.Message.DestinationId, serverId)
 		err := client.Call("ServerRPC.ForwardMessage", &fwdReq, &fwdRes)
 		if err != nil {
-			//TODO: handle error, cache message as unacked
+			fmt.Printf("SERVER%d LOG: Error Forwarding Message from client: %s to client: %s to server with id %d, caching message\n", sRPC.serverId, req.Message.SourceId, req.Message.DestinationId, serverId)
+			CacheUnackedMessage(sRPC, req.Message, serverId)
+			client.Close()
+			return nil
 		}
 		client.Close()
-		fmt.Printf("SERVER%d LOG: Message from client: %s to client %s forwarded to server with id %d\n", sRPC.serverId, req.Message.SourceId, req.Message.DestinationId, serverId)
 		res.ServerId = sRPC.serverId
 		res.Message = msg
 		return nil
@@ -243,14 +263,6 @@ func (sRPC *ServerRPC) ForwardMessage(req *ForwardMessageReq, res *ForwardMessag
 // Client calls this through MessageLib on its primary server. Retrieves all unread messages for the client. Returns a
 // slice of MessageStructs. Also, after retrieval, the cached messages are deleted from the primary and secondary servers
 func (sRPC *ServerRPC) RetrieveMessages(req *RetrieveMessageReq, res *RetrieveMessageRes) error {
-	//fmt.Printf("SERVER%d LOG: Client: %s retrieved messages from its primary server\n", sRPC.serverId, req.ClientId)
-
-	// sRPC.runOnce = true
-	// if sRPC.runOnce {
-	// 	fmt.Printf("SERVER%d LOG:\n", sRPC.serverId)
-	// 	sRPC.runOnce = false
-	// }
-
 	if messages, ok := sRPC.primaryClientMessages[req.ClientId]; ok {
 		delete(sRPC.primaryClientMessages, req.ClientId)
 		//if messages were deleted, clear cache in secondary servers
@@ -267,16 +279,12 @@ func (sRPC *ServerRPC) RetrieveMessages(req *RetrieveMessageReq, res *RetrieveMe
 	return nil
 }
 
-func (sRPC *ServerRPC) printForServer(s string) {
-	fmt.Printf("SERVER%d LOG: %s\n", sRPC.serverId, s)
-
-}
-
 // HandleFailure
 // Coord calls this, informing the server about what its new role and adjacent servers are. The server
 // may need to forward any unacknowledged messages once the chain is reconfigured.
 // Server must then retrieve cached data from one of its secondaries for the clients in ClientIds
 func (sRPC *ServerRPC) HandleFailure(req *HandleFailureReq, res *interface{}) error {
+	fmt.Printf("SERVER%d LOG: Handling Server Failure\n", sRPC.serverId)
 
 	// PrevServerId       uint8
 	// PrevServerAddr     string
@@ -284,7 +292,6 @@ func (sRPC *ServerRPC) HandleFailure(req *HandleFailureReq, res *interface{}) er
 	// NextServerAddr     string
 	// PrimaryClientIds   []string
 	// SecondaryClientIds []string
-
 
 	newNext := req.NextServerAddr
 	newPrev := req.PrevServerAddr
@@ -366,6 +373,10 @@ func (sRPC *ServerRPC) HandleFailure(req *HandleFailureReq, res *interface{}) er
 	sRPC.nextServerId = req.NextServerId
 	sRPC.prevServerId = req.PrevServerId
 
+	// resend any unacked messages
+	go ResendUnackedMessages(sRPC, "prev")
+	go ResendUnackedMessages(sRPC, "next")
+
 	return nil
 }
 
@@ -376,9 +387,6 @@ func (sRPC *ServerRPC) GetCachedMessagesFromPrimary(req *GetCachedMessagesFromPr
 	return nil
 }
 
-// Required RPC Calls: END
-
-// Required Internal Methods: BEGIN
 func (sRPC *ServerRPC) RecvCachedMessagesFromPrimary(req *SendCachedMessagesReq, res *interface{}) error {
 	fmt.Printf("SERVER%d LOG: Secondary server received cache request from primary server\n", sRPC.serverId)
 	msgMap := req.Messages
@@ -399,6 +407,9 @@ func (sRPC *ServerRPC) ClearCache(req *ClearCacheReq, res *interface{}) error {
 	return nil
 }
 
+// Required RPC Calls: END
+
+// Required Internal Methods: BEGIN
 func ClearCacheMessagesInSecondaries(sRPC *ServerRPC, clientId string) {
 	connPrev, connPrevErr := util.GetTCPConn(sRPC.prevServerAddr)
 	if connPrevErr != nil {
@@ -467,6 +478,56 @@ func GetOtherServerAddrAndId(sRPC *ServerRPC, serverId uint8) (string, uint8) {
 		return sRPC.prevServerAddr, sRPC.prevServerId
 	} else {
 		return sRPC.nextServerAddr, sRPC.nextServerId
+	}
+}
+
+func CacheUnackedMessage(sRPC *ServerRPC, msg MessageStruct, serverId uint8) {
+	// handle error, cache message as not forwarded
+	if serverId == sRPC.nextServerId {
+		sRPC.routedNextMessages = append(sRPC.routedNextMessages, msg)
+	} else {
+		sRPC.routedPrevMessages = append(sRPC.routedPrevMessages, msg)
+	}
+}
+
+func ResendUnackedMessages(sRPC *ServerRPC, prevOrNext string) {
+	time.Sleep(time.Millisecond * 10)
+	var success bool = true
+
+	var addr string
+	var cachedMessages []MessageStruct
+	if prevOrNext == "prev" {
+		addr = sRPC.prevServerAddr
+		cachedMessages = sRPC.routedPrevMessages
+	} else {
+		addr = sRPC.nextServerAddr
+		cachedMessages = sRPC.routedNextMessages
+	}
+
+	if len(cachedMessages) > 0 {
+		client, cerr := rpc.Dial("tcp", addr)
+		if cerr != nil {
+			return
+		}
+		fmt.Printf("SERVER%d LOG: Resending %d unacked messages to %s server with id %d \n", sRPC.serverId, len(cachedMessages), prevOrNext, sRPC.nextServerId)
+		for _, msg := range cachedMessages {
+
+			fwdReq := ForwardMessageReq{ServerId: sRPC.serverId, Message: msg}
+			var fwdRes ForwardMessageRes
+			err := client.Call("ServerRPC.ForwardMessage", &fwdReq, &fwdRes)
+			if err != nil {
+				success = false
+				break
+			}
+		}
+		client.Close()
+		if success { // cleanup unacked cache if successful
+			if prevOrNext == "prev" {
+				sRPC.routedPrevMessages = make([]MessageStruct, 0)
+			} else {
+				sRPC.routedNextMessages = make([]MessageStruct, 0)
+			}
+		}
 	}
 }
 

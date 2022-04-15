@@ -91,8 +91,9 @@ func (m *MessageLib) SendMessage(message implementation.MessageStruct) (implemen
 			continue
 		}
 		message.Timestamp = time.Now()
-		
+
 		if !util.IsConnectionAlive(m.primaryServerIPPort) {
+			fmt.Println("connection not alive")
 			m.serverClient.Close()
 			m.GetPrimaryServer()
 			continue
@@ -106,32 +107,6 @@ func (m *MessageLib) SendMessage(message implementation.MessageStruct) (implemen
 		break
 	}
 	return message, nil
-}
-
-/**
-Retrieve messages from the primary server. If source client id is not nil, it only returns messages from that source client.
-This call is blocking until the RPC call succeeds
-**/
-func (m *MessageLib) RetrieveMessages() []implementation.MessageStruct {
-	var res implementation.RetrieveMessageRes
-	for {
-		if !m.primaryReady {
-			continue
-		}
-		req := implementation.RetrieveMessageReq{ClientId: m.clientId}
-		if !util.IsConnectionAlive(m.primaryServerIPPort) {
-			m.serverClient.Close()
-			m.GetPrimaryServer()
-			continue
-		}
-		err := m.serverClient.Call("ServerRPC.RetrieveMessages", &req, &res)
-		if err != nil {
-			m.serverClient.Close()
-			m.GetPrimaryServer()
-			continue
-		}
-		return res.Messages
-	}
 }
 
 /**
@@ -164,7 +139,6 @@ outer:
 			}
 			err := m.serverClient.Call("ServerRPC.RetrieveMessages", &req, &res)
 			if err != nil {
-				fmt.Printf("Error encountered when retrieving messages %e", err)
 				m.serverClient.Close()
 				m.GetPrimaryServer()
 				continue
@@ -206,21 +180,28 @@ func (m *MessageLib) GetPrimaryServer() {
 		req := implementation.PrimaryServerReq{ClientId: m.clientId}
 		err := m.coordClient.Call("CoordRPC.RetrievePrimaryServer", &req, &result)
 		if err != nil {
+			// this should never happen because the coord should never fail
+			util.CheckErr(err, "Error retrieving primary server")
 			continue
 		}
 
 		if !result.ChainReady {
+			// chain not ready, wait and try again
 			time.Sleep(time.Millisecond * 100)
+			m.primaryReady = false
 			continue
 		}
-		break
+		m.primaryServerIPPort = result.PrimaryServerIPPort
+		serverConn, err := util.GetTCPConn(m.primaryServerIPPort)
+		if err != nil {
+			// there is an error connecting to the primary returned by the coord, try again
+			m.primaryReady = false
+			time.Sleep(time.Millisecond * 10)
+		} else {
+			m.serverClient = *rpc.NewClient(serverConn)
+			m.primaryReady = true
+			break
+		}
 	}
-	m.primaryServerIPPort = result.PrimaryServerIPPort
-	serverConn, err := util.GetTCPConn(m.primaryServerIPPort)
-	if err != nil {
-		m.primaryReady = false
-	} else {
-		m.serverClient = *rpc.NewClient(serverConn)
-		m.primaryReady = true
-	}
+
 }

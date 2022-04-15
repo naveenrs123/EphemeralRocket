@@ -218,7 +218,7 @@ func (sRPC *ServerRPC) ForwardMessage(req *ForwardMessageReq, res *ForwardMessag
 	fmt.Printf("SERVER%d LOG: Received a forwarded message from server%d, from client '%s' to client '%s'\n", sRPC.serverId, req.ServerId, req.Message.SourceId, req.Message.DestinationId)
 	msg := req.Message
 	if util.FindElement(sRPC.primaryClients, msg.DestinationId) { // this server is the primary server for the destination client
-		fmt.Printf("SERVER%d LOG: this is the primary server for client %s\n", sRPC.serverId, req.Message.DestinationId)
+		fmt.Printf("SERVER%d LOG: This is the primary server for client %s\n", sRPC.serverId, req.Message.DestinationId)
 		// cache messages
 		currMessages := sRPC.primaryClientMessages[msg.DestinationId]
 		currMessages = append(currMessages, msg)
@@ -262,6 +262,7 @@ func (sRPC *ServerRPC) RetrieveMessages(req *RetrieveMessageReq, res *RetrieveMe
 		delete(sRPC.primaryClientMessages, req.ClientId)
 		//if messages were deleted, clear cache in secondary servers
 		if len(messages) != 0 {
+			fmt.Printf("SERVER%d LOG: Client with id '%s' retrieved %d messages from primary\n", sRPC.serverId, req.ClientId, len(messages))
 			ClearCacheMessagesInSecondaries(sRPC, req.ClientId)
 		}
 		res.ClientId = req.ClientId
@@ -312,6 +313,8 @@ func (sRPC *ServerRPC) HandleFailure(req *HandleFailureReq, res *interface{}) er
 		// We are sent a non-empty list of new secondary clients. This means s3 is the primary and this is a new secondary
 		if len(req.SecondaryClientIds) > 0 {
 
+			fmt.Printf("SERVER%d LOG: New Secondary For Clients: %v \n", sRPC.serverId, req.SecondaryClientIds)
+
 			req := GetCachedMessagesFromPrimaryReq{}
 			var resPrimaryClientMessages GetCachedMessagesFromPrimaryRes
 			err = client.Call("ServerRPC.GetCachedMessagesFromPrimary", &req, &resPrimaryClientMessages)
@@ -341,6 +344,8 @@ func (sRPC *ServerRPC) HandleFailure(req *HandleFailureReq, res *interface{}) er
 
 		// We are sent a non-empty list of new secondary clients. This means s1 is the primary and this is a new secondary
 		if len(req.SecondaryClientIds) > 0 {
+
+			fmt.Printf("SERVER%d LOG: New Secondary For Clients: %v \n", sRPC.serverId, req.SecondaryClientIds)
 
 			req := GetCachedMessagesFromPrimaryReq{}
 			var resPrimaryClientMessages GetCachedMessagesFromPrimaryRes
@@ -378,6 +383,7 @@ func (sRPC *ServerRPC) HandleFailure(req *HandleFailureReq, res *interface{}) er
 // SendCachedMessages
 // Secondary server calls this on a primary server to get its primaryClients cached messages.
 func (sRPC *ServerRPC) GetCachedMessagesFromPrimary(req *GetCachedMessagesFromPrimaryReq, res *GetCachedMessagesFromPrimaryRes) error {
+	fmt.Printf("SERVER%d LOG: Primary Received Cached Messages Fetch Request From Secondary Server", sRPC.serverId)
 	res.Messages = sRPC.primaryClientMessages
 	return nil
 }

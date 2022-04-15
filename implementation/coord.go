@@ -130,6 +130,10 @@ func (c *CoordRPC) RetrievePrimaryServer(req *PrimaryServerReq, res *PrimaryServ
 	if v, ok := c.PrimaryClientMap[req.ClientId]; ok {
 		fmt.Printf("COORD LOG: Existing Client: %s\n", req.ClientId)
 		// If a primary has been assigned, retrieve it.
+		
+		fmt.Printf("COORD LOG: Primary for %s is %d\n", req.ClientId, v)
+		fmt.Printf("COORD LOG: Secondary 1 for %s is %d\n", req.ClientId, c.ServerDetailsMap[v].PrevId)
+		fmt.Printf("COORD LOG: Secondary 2 for %s is %d\n", req.ClientId, c.ServerDetailsMap[v].NextId)
 		res.PrimaryServerIPPort = c.ServerDetailsMap[v].ClientAddr
 	} else {
 		fmt.Printf("COORD LOG: New Client: %s\n", req.ClientId)

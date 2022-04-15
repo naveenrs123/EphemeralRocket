@@ -93,7 +93,6 @@ func (m *MessageLib) SendMessage(message implementation.MessageStruct) (implemen
 		message.Timestamp = time.Now()
 
 		if !util.IsConnectionAlive(m.primaryServerIPPort) {
-			fmt.Println("connection not alive")
 			m.serverClient.Close()
 			m.GetPrimaryServer()
 			continue

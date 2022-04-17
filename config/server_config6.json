@@ -1,0 +1,8 @@
+{
+    "ServerID": 6,
+    "CoordAddr": "thetis.students.cs.ubc.ca:52690",
+    "ServerAddr": "thetis.students.cs.ubc.ca:40029",
+    "ServerServerAddr": "thetis.students.cs.ubc.ca:40030",
+    "ServerListenAddr": "thetis.students.cs.ubc.ca:40031",
+    "ClientListenAddr": "thetis.students.cs.ubc.ca:40032"
+  }

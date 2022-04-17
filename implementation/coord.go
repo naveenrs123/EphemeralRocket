@@ -35,6 +35,7 @@ type CoordRPC struct {
 	LostMsgsThresh   uint8                    // FCheck threshold
 	FCheckIP         string                   // IP used for fcheck
 	IsRingReady      bool                     // Flag for when ring is being reconfigured
+	ServerRing       []uint8                  // order of servers
 	ServerDetailsMap map[uint8]*ServerDetails // Maps server id to its details, including clients for which it is a primary.
 	PrimaryClientMap map[string]uint8         // Maps a client id to its primary server id
 	ClientList       []string                 // List of client ids in the system
@@ -57,6 +58,7 @@ func (c *Coord) Start(config CoordConfig) error {
 		LostMsgsThresh:   config.LostMsgsThresh,
 		FCheckIP:         config.ServerListenAddr,
 		IsRingReady:      false,
+		ServerRing:       make([]uint8, 0),
 		ServerDetailsMap: make(map[uint8]*ServerDetails),
 		PrimaryClientMap: make(map[string]uint8),
 		ClientList:       make([]string, 0),
@@ -130,10 +132,6 @@ func (c *CoordRPC) RetrievePrimaryServer(req *PrimaryServerReq, res *PrimaryServ
 	if v, ok := c.PrimaryClientMap[req.ClientId]; ok {
 		fmt.Printf("COORD LOG: Existing Client: %s\n", req.ClientId)
 		// If a primary has been assigned, retrieve it.
-		
-		fmt.Printf("COORD LOG: Primary for %s is %d\n", req.ClientId, v)
-		fmt.Printf("COORD LOG: Secondary 1 for %s is %d\n", req.ClientId, c.ServerDetailsMap[v].PrevId)
-		fmt.Printf("COORD LOG: Secondary 2 for %s is %d\n", req.ClientId, c.ServerDetailsMap[v].NextId)
 		res.PrimaryServerIPPort = c.ServerDetailsMap[v].ClientAddr
 	} else {
 		fmt.Printf("COORD LOG: New Client: %s\n", req.ClientId)
@@ -165,14 +163,12 @@ func (c *CoordRPC) RetrievePrimaryServer(req *PrimaryServerReq, res *PrimaryServ
 		prevServer.SecondaryClients = append(prevServer.SecondaryClients, req.ClientId)
 		nextServer.SecondaryClients = append(nextServer.SecondaryClients, req.ClientId)
 
-		fmt.Printf("COORD LOG: Primary for %s is %d\n", req.ClientId, primaryServer.ServerId)
-		fmt.Printf("COORD LOG: Secondary 1 for %s is %d\n", req.ClientId, prevServer.ServerId)
-		fmt.Printf("COORD LOG: Secondary 2 for %s is %d\n", req.ClientId, nextServer.ServerId)
-
 		primaryClient.Close()
 		prevClient.Close()
 		nextClient.Close()
 	}
+
+	printClient(c, req.ClientId)
 
 	res.ChainReady = true
 	return nil
@@ -234,6 +230,9 @@ func CreateServerRing(c *CoordRPC) {
 		util.CheckErr(serverCalls[i].Error, "Error during call to ServerRPC.ConnectRing for server")
 		<-doneChan
 	}
+
+	c.ServerRing = serverOrder
+	fmt.Printf("COORD LOG: New Ring - %v\n", c.ServerRing)
 	c.IsRingReady = true
 	go MonitorServerFailures(c)
 	fmt.Println("COORD LOG: All Servers Joined")
@@ -393,6 +392,10 @@ func MonitorServerFailures(c *CoordRPC) {
 
 			// Reconfigure ring and remove failing server from the map.
 			prev.NextId, next.PrevId = next.ServerId, prev.ServerId
+			c.ServerRing = util.RemoveUint8(c.ServerRing, failing.ServerId)
+			fmt.Printf("COORD LOG: New Ring - %v\n", c.ServerRing)
+			printClientMap(c)
+
 			delete(c.ServerDetailsMap, failing.ServerId)
 			c.IsRingReady = true
 			fmt.Printf("COORD LOG: Server%d Failure Handled\n", f.ServerID)
@@ -450,4 +453,16 @@ func partitionSecondaryClients(c *CoordRPC, clients []string, prevServerId uint8
 func calculateLoad(c *CoordRPC, serverId uint8) int {
 	server := c.ServerDetailsMap[serverId]
 	return 2*len(server.PrimaryClients) + len(server.SecondaryClients)
+}
+
+func printClientMap(c *CoordRPC) {
+	for client := range c.PrimaryClientMap {
+		printClient(c, client)
+	}
+}
+
+func printClient(c *CoordRPC, client string) {
+	serverId := c.PrimaryClientMap[client]
+	primServer := c.ServerDetailsMap[serverId]
+	fmt.Printf("COORD LOG: %s -> Prev: %d, Primary: %d, Next: %d\n", client, primServer.PrevId, serverId, primServer.NextId)
 }

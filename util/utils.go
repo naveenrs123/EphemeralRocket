@@ -100,6 +100,15 @@ func RemoveElement(arr []string, elem string) []string {
 	return arr
 }
 
+func RemoveUint8(arr []uint8, elem uint8) []uint8 {
+	for i, v := range arr {
+		if v == elem {
+			return append(arr[:i], arr[i+1:]...)
+		}
+	}
+	return arr
+}
+
 // removes first element in array that matches string elem
 func FindElement(arr []string, elem string) bool {
 	for _, v := range arr {

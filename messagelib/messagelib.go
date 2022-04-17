@@ -202,5 +202,4 @@ func (m *MessageLib) GetPrimaryServer() {
 			break
 		}
 	}
-
 }

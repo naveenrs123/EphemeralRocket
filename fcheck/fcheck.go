@@ -185,11 +185,6 @@ func monitor(conn *net.UDPConn, notifyCh chan<- FailureDetected, stopCh <-chan b
 			if err != nil {
 				lost++
 				if lost > arg.LostMsgThresh {
-					fmt.Println(FailureDetected{
-						UDPIpPort: arg.HBeatRemoteIPPortList[addrIdx],
-						ServerID:  arg.ServerIds[addrIdx],
-						Timestamp: time.Now(),
-					})
 					notifyCh <- FailureDetected{
 						UDPIpPort: arg.HBeatRemoteIPPortList[addrIdx],
 						ServerID:  arg.ServerIds[addrIdx],

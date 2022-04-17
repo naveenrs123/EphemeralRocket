@@ -383,7 +383,7 @@ func (sRPC *ServerRPC) HandleFailure(req *HandleFailureReq, res *interface{}) er
 // SendCachedMessages
 // Secondary server calls this on a primary server to get its primaryClients cached messages.
 func (sRPC *ServerRPC) GetCachedMessagesFromPrimary(req *GetCachedMessagesFromPrimaryReq, res *GetCachedMessagesFromPrimaryRes) error {
-	fmt.Printf("SERVER%d LOG: Primary Received Cached Messages Fetch Request From Secondary Server", sRPC.serverId)
+	fmt.Printf("SERVER%d LOG: Primary Received Cached Messages Fetch Request From Secondary Server\n", sRPC.serverId)
 	res.Messages = sRPC.primaryClientMessages
 	return nil
 }

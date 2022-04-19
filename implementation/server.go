@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/rpc"
+	//"os"
 	"time"
 )
 
@@ -230,6 +231,9 @@ func (sRPC *ServerRPC) ForwardMessage(req *ForwardMessageReq, res *ForwardMessag
 		res.Message = msg
 		return nil
 	} else { // this server is NOT the primary server for the destination client
+		/* if sRPC.serverId == 5 {
+			os.Exit(1)
+		} */
 		serverAddr, serverId := GetOtherServerAddrAndId(sRPC, req.ServerId)
 		conn, connerr := util.GetTCPConn(serverAddr)
 		if connerr != nil {

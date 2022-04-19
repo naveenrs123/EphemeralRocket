@@ -1,6 +1,6 @@
 {
-    "ClientID": "client2",
+    "ClientID": "zoe",
     "CoordAddr": "thetis.students.cs.ubc.ca:52069",
-    "LocalCoordAddr": "thetis.students.cs.ubc.ca:44000",
-    "LocalPrimaryServerAddr": "thetis.students.cs.ubc.ca:44001"
+    "LocalCoordAddr": "valdes.students.cs.ubc.ca:44000",
+    "LocalPrimaryServerAddr": "valdes.students.cs.ubc.ca:44001"
 }
